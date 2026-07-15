@@ -1,11 +1,11 @@
 import Fastify, { LogController, type FastifyInstance } from "fastify";
-import { AuthService } from "../auth/service.js";
+import { AuthService, hashVirtualKey } from "../auth/service.js";
 import { createAdminAuthorizationService } from "../admin-auth/factory.js";
 import type { AdminAuthorizationService } from "../admin-auth/service.js";
 import type { GatewayConfig } from "../config.js";
 import { GatewayError, toGatewayError } from "../core/errors.js";
 import { createControlPlaneRuntime } from "../control-plane/runtime.js";
-import type { VirtualKeyControlPlaneService } from "../control-plane/service.js";
+import { VirtualKeyControlPlaneService } from "../control-plane/service.js";
 import { MetricsRegistry } from "../observability/metrics.js";
 import { createTraceContext } from "../observability/trace.js";
 import { MockProvider } from "../providers/mock-provider.js";
@@ -14,13 +14,17 @@ import { ProviderRegistry } from "../providers/registry.js";
 import { ModelRouter } from "../routing/model-router.js";
 import { createQuotaRuntime } from "../quota/factory.js";
 import type { QuotaService } from "../quota/service.js";
-import type { GovernanceService } from "../governance/service.js";
 import { registerChatCompletionRoutes } from "./routes/chat-completions.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerModelRoutes } from "./routes/models.js";
 import { registerMetricsRoutes } from "./routes/metrics.js";
 import { registerAdminVirtualKeyRoutes } from "./routes/admin-virtual-keys.js";
 import { registerAdminGovernanceRoutes } from "./routes/admin-governance.js";
+import { registerAdminLocalAuthRoutes } from "./routes/admin-local-auth.js";
+import { LocalAdminAccountService } from "../admin-auth/local.js";
+import { InMemoryControlPlaneRepository } from "../control-plane/in-memory-repository.js";
+import { InMemoryGovernanceRepository } from "../governance/repository.js";
+import { GovernanceService } from "../governance/service.js";
 import "./fastify.js";
 
 export interface AppDependencies {
@@ -74,9 +78,18 @@ export const buildApp = async (
     app.log.info("postgres virtual-key control plane initialized");
     app.addHook("onClose", async () => controlPlaneRuntime.close());
   }
+  const localRepository = !controlPlaneRuntime && !dependencies.controlPlaneService && dependencies.config.adminAuth.mode !== "disabled"
+    ? new InMemoryControlPlaneRepository()
+    : undefined;
+  if (localRepository) {
+    for (const seed of dependencies.config.virtualKeys) {
+      await localRepository.create({ keyId: seed.keyId, keyHash: hashVirtualKey(seed.rawKey, dependencies.config.keyPepper), tenantId: seed.tenantId, projectId: seed.projectId, applicationId: seed.applicationId, allowedModels: seed.allowedModels }, { actorId: "system:environment-seed" });
+    }
+  }
   const authService =
     dependencies.authService ??
     controlPlaneRuntime?.authService ??
+    (localRepository ? new AuthService(localRepository, dependencies.config.keyPepper) : undefined) ??
     AuthService.fromSeeds(dependencies.config.virtualKeys, dependencies.config.keyPepper);
   const quotaRuntime = dependencies.quotaService
     ? undefined
@@ -136,6 +149,7 @@ export const buildApp = async (
     if (unauthenticatedPaths.has(path)) return;
     if (dependencies.config.metricsEnabled && path === "/metrics") return;
     if (path.startsWith("/admin/v1/")) return;
+    if (path.startsWith("/admin/auth/local/")) return;
     request.authContext = await authService.authenticate(
       request.headers.authorization,
     );
@@ -215,9 +229,12 @@ export const buildApp = async (
       bearerToken: dependencies.config.metricsBearerToken,
     });
   }
-  const controlPlaneService = dependencies.controlPlaneService ?? controlPlaneRuntime?.service;
-  const governanceService = dependencies.governanceService ?? controlPlaneRuntime?.governanceService;
+  const controlPlaneService = dependencies.controlPlaneService ?? controlPlaneRuntime?.service ?? (localRepository ? new VirtualKeyControlPlaneService(localRepository, dependencies.config.keyPepper, undefined, dependencies.config.rotationApprovalTtlMs) : undefined);
+  const governanceService = dependencies.governanceService ?? controlPlaneRuntime?.governanceService ?? (localRepository ? new GovernanceService(new InMemoryGovernanceRepository(), undefined, registry) : undefined);
   const adminAuthorization = dependencies.adminAuthorizationService ?? createAdminAuthorizationService(dependencies.config);
+  if (dependencies.config.adminAuth.mode === "local") {
+    await registerAdminLocalAuthRoutes(app, new LocalAdminAccountService(dependencies.config.adminAuth));
+  }
   if (controlPlaneService && adminAuthorization) {
     await registerAdminVirtualKeyRoutes(app, {
       service: controlPlaneService,

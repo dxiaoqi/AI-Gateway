@@ -5,6 +5,7 @@ apps/admin-console/.next/
 apps/admin-console/.env.local
 coverage/
 .env
+.data/
 *.log
 *.tsbuildinfo
 .DS_Store

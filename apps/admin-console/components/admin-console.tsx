@@ -100,6 +100,13 @@ export function AdminConsole() {
   const [booting, setBooting] = useState(true);
   const [oidcEnabled, setOidcEnabled] = useState(false);
   const [devLoginEnabled, setDevLoginEnabled] = useState(false);
+  const [localAuthEnabled, setLocalAuthEnabled] = useState(false);
+  const [localBootstrapAvailable, setLocalBootstrapAvailable] = useState(false);
+  const [organizationName, setOrganizationName] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [identity, setIdentity] = useState<AdminIdentity | null>(null);
   const [keys, setKeys] = useState<VirtualKey[]>([]);
   const [approvals, setApprovals] = useState<RotationRequest[]>([]);
@@ -167,6 +174,8 @@ export function AdminConsole() {
     ]).then(async ([config, sessionResponse]) => {
       setOidcEnabled(Boolean(config.oidcEnabled));
       setDevLoginEnabled(Boolean(config.devTokenLoginEnabled));
+      setLocalAuthEnabled(Boolean(config.localAuthEnabled));
+      setLocalBootstrapAvailable(Boolean(config.localBootstrapAvailable));
       if (sessionResponse.ok) {
         const session = await sessionResponse.json() as { csrfToken: string };
         setCsrfToken(session.csrfToken);
@@ -177,7 +186,7 @@ export function AdminConsole() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const login = async (event: FormEvent) => {
+  const loginWithDevToken = async (event: FormEvent) => {
     event.preventDefault();
     const credential = tokenInput.trim();
     if (!credential || !devLoginEnabled) return;
@@ -200,6 +209,24 @@ export function AdminConsole() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const submitLocalAuth = async (event: FormEvent) => {
+    event.preventDefault();
+    if (localBootstrapAvailable && password !== confirmPassword) { alert("两次输入的密码不一致", true); return; }
+    setLoading(true);
+    try {
+      const path = localBootstrapAvailable ? "bootstrap" : "login";
+      const response = await fetch(`/api/auth/local/${path}`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(localBootstrapAvailable ? { organizationName: organizationName.trim(), username: username.trim(), password } : { username: username.trim(), password }),
+      });
+      const payload = await response.json() as { csrfToken?: string; error?: { message?: string } };
+      if (!response.ok || !payload.csrfToken) throw new Error(payload.error?.message ?? "认证失败");
+      setPassword(""); setConfirmPassword(""); setCsrfToken(payload.csrfToken);
+      await loadData(payload.csrfToken);
+    } catch (error) { alert(error instanceof Error ? error.message : "认证失败", true); }
+    finally { setLoading(false); }
   };
 
   const refresh = async (message?: string) => {
@@ -331,9 +358,17 @@ export function AdminConsole() {
           <BrandMark />
           <p className="eyebrow">ENTERPRISE CONTROL PLANE</p>
           <h1>把模型访问变成<br /><em>可治理的能力</em></h1>
-          <p className="login-copy">通过企业身份提供方登录。Access Token 只保存在 Next.js 服务端，浏览器仅持有 HttpOnly 会话 Cookie。</p>
+          <p className="login-copy">使用主组织账号或企业身份提供方登录。Access Token 只保存在 Next.js 服务端，浏览器仅持有 HttpOnly 会话 Cookie。</p>
+          {localAuthEnabled && <form className="login-form local-login" onSubmit={submitLocalAuth}>
+            <p>{localBootstrapAvailable ? "首次使用：创建唯一的主组织 Owner。创建完成后公开注册入口会自动关闭。" : "使用主组织账号登录管理后台。"}</p>
+            {localBootstrapAvailable && <label>组织名称<input value={organizationName} onChange={(event) => setOrganizationName(event.target.value)} autoComplete="organization" placeholder="例如：示例科技" minLength={2} maxLength={100} required /></label>}
+            <label>用户名<input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" placeholder="owner 或 owner@example.com" minLength={3} maxLength={100} required /></label>
+            <label>密码 <span>{localBootstrapAvailable ? "至少 12 位，包含字母和数字" : ""}</span><div className="token-field"><input type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={localBootstrapAvailable ? "new-password" : "current-password"} minLength={localBootstrapAvailable ? 12 : 1} maxLength={128} required /><button type="button" className="icon-button" onClick={() => setShowPassword((value) => !value)}>{showPassword ? "隐藏" : "显示"}</button></div></label>
+            {localBootstrapAvailable && <label>确认密码<input type={showPassword ? "text" : "password"} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" minLength={12} maxLength={128} required /></label>}
+            <button className="primary-button wide" disabled={loading} type="submit"><span>{loading ? "正在处理…" : localBootstrapAvailable ? "创建主组织并进入" : "登录管理后台"}</span><b>→</b></button>
+          </form>}
           {oidcEnabled && <a className="primary-button wide sso-button" href="/api/auth/login"><span>使用企业 SSO 登录</span><b>→</b></a>}
-          {devLoginEnabled && <form className="login-form dev-login" onSubmit={login}>
+          {devLoginEnabled && <form className="login-form dev-login" onSubmit={loginWithDevToken}>
             <p>仅本地开发：使用管理员 Token 创建服务端会话</p>
             <label htmlFor="access-token">管理员 Access Token</label>
             <div className="token-field">
@@ -342,11 +377,11 @@ export function AdminConsole() {
             </div>
             <button className="primary-button wide" disabled={loading} type="submit"><span>{loading ? "正在验证…" : "验证身份并进入"}</span><b>→</b></button>
           </form>}
-          {!oidcEnabled && !devLoginEnabled && <div className="auth-warning">尚未配置 OIDC。请让平台工程师设置管理后台身份提供方。</div>}
+          {!localAuthEnabled && !oidcEnabled && !devLoginEnabled && <div className="auth-warning">尚未配置任何管理员认证方式。</div>}
           <div className="security-note"><span>●</span> HttpOnly 会话 · 同源 BFF · CSRF 校验 · 默认拒绝</div>
         </section>
         <aside className="login-aside">
-          <div className="aside-top"><span>AI GATEWAY</span><span>v0.18</span></div>
+          <div className="aside-top"><span>AI GATEWAY</span><span>v0.19</span></div>
           <div className="signal-card"><p>PLATFORM SIGNAL</p><strong>身份 × 范围 × 审批</strong><div className="signal-line"><i /><i /><i /><i /><i /></div></div>
           <p className="aside-quote">“网关不是另一个代理层，<br />而是企业 AI 的策略执行点。”</p>
         </aside>

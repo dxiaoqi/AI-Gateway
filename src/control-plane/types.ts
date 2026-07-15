@@ -19,7 +19,7 @@ export interface AuditActor {
   issuer?: string;
   roles?: readonly string[];
   tenantScopes?: readonly string[];
-  authMethod?: "static" | "oidc";
+  authMethod?: "static" | "oidc" | "local";
   requestId?: string;
   traceId?: string;
 }
@@ -32,7 +32,7 @@ export interface AuditEvent {
   actorIssuer?: string;
   actorRoles?: readonly string[];
   actorTenantScopes?: readonly string[];
-  authMethod?: "static" | "oidc";
+  authMethod?: "static" | "oidc" | "local";
   action:
     | "virtual_key.created"
     | "virtual_key.updated"

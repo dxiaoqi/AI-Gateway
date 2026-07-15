@@ -1,6 +1,6 @@
 # Enterprise AI Gateway
 
-一个以可运行迭代方式建设的 Node.js/TypeScript 企业 AI Gateway。目前完成 **Iteration 18**：在已有身份、配额、路由、可观测性、Key 控制面与审批后台之上，新增模型部署、动态配额、成本预算和 Guardrail 管理，并接入实际请求链路。Iteration 14 外部通知按产品优先级后置。
+一个以可运行迭代方式建设的 Node.js/TypeScript 企业 AI Gateway。目前完成 **Iteration 19**：除模型部署、动态配额、成本预算和 Guardrail 外，在没有企业 OIDC 时也可首次注册唯一主组织 Owner，并使用用户名密码进入管理后台。Iteration 14 外部通知按产品优先级后置。
 
 更完整的能力与实施路线见 [AI_GATEWAY_RESEARCH.md](./AI_GATEWAY_RESEARCH.md)。
 
@@ -131,17 +131,17 @@ ROTATION_APPROVAL_TTL_MS=900000
 
 ### 启动 Next.js 管理后台
 
-管理后台是独立 workspace，默认监听 `http://127.0.0.1:3100`。先按上文启动 PostgreSQL 和带管理员认证的 Gateway，再在另一个终端执行：
+管理后台是独立 workspace，默认监听 `http://127.0.0.1:3100`。开发环境没有配置 static/OIDC 时，Gateway 默认启用本地 Owner 模式。最短启动方式：
 
 ```bash
-GATEWAY_API_BASE_URL='http://127.0.0.1:3000' \
-ADMIN_CONSOLE_PUBLIC_ORIGIN='http://127.0.0.1:3100' \
-ADMIN_CONSOLE_SESSION_SECRET='replace-with-at-least-32-random-characters' \
-ADMIN_CONSOLE_ALLOW_DEV_TOKEN_LOGIN=true \
+npm run dev
+# 另一个终端
 npm run admin:dev
 ```
 
-打开 `http://127.0.0.1:3100`，本地兼容入口会把静态管理员 Token 换成服务端 Session；浏览器只保留 HttpOnly Cookie。生产配置 OIDC 和 Redis，并关闭开发入口。完整配置、协议说明和排障见 [管理后台操作手册](./docs/runbooks/admin-console.md)。
+打开 `http://127.0.0.1:3100`：第一次填写组织名称、Owner 用户名和强密码，创建后注册入口自动关闭，以后直接用该账号登录。账号文件默认保存在 `.data/admin-local-owner.json`，已被 Git 忽略。浏览器只保留 HttpOnly Cookie，不持有 Gateway Access Token。
+
+没有 `DATABASE_URL` 时，Owner 账号会持久化，但 Key 和治理策略仍是内存控制面，重启会恢复环境种子；正式使用应配置 PostgreSQL。多实例或大型企业生产环境仍推荐 OIDC。完整配置、协议说明和排障见 [管理后台操作手册](./docs/runbooks/admin-console.md)。
 
 健康检查：
 
@@ -272,6 +272,8 @@ npm run smoke:oidc
 - PII、Prompt Injection、Content Safety 租户 Guardrail 基线
 - 统一治理资源 RBAC、Tenant Scope、If-Match 乐观锁和治理审计
 - Next.js 模型、配额、成本预算和安全护栏管理页面
+- 首次启动主组织 Owner 注册、scrypt 密码摘要与本地账号登录
+- 短期签名管理员 Token、登录失败限速和 local Actor 审计
 - 上游超时与统一错误格式
 - JSON Schema 请求校验
 - 健康检查和优雅退出
@@ -286,6 +288,7 @@ npm run smoke:oidc
 - OpenTelemetry SDK/Collector 导出与分布式 Span
 - 外部邮件/IM/Webhook 通知投递、正式 SLO 审批和团队级责任人轮值
 - project/application 细粒度管理员范围、专业 DLP/内容安全服务和输出护栏
+- 本地成员邀请、密码找回/MFA、多实例账号仓库与紧急 Token 吊销
 
 这些能力会按照迭代计划逐步加入，避免在核心协议与流式行为稳定前过早引入分布式状态。OpenAI-compatible Adapter 已可连接真实服务，但当前自动化测试完全使用可注入 HTTP Client，不消耗模型额度。
 

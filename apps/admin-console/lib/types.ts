@@ -4,7 +4,7 @@ export interface AdminIdentity {
   actorId: string;
   roles: AdminRole[];
   tenantScopes: string[];
-  authMethod: "static" | "oidc";
+  authMethod: "static" | "oidc" | "local";
 }
 
 export interface VirtualKey {
@@ -61,7 +61,7 @@ export interface AuditEvent {
   actorIssuer?: string;
   actorRoles?: string[];
   actorTenantScopes?: string[];
-  authMethod?: "static" | "oidc";
+  authMethod?: "static" | "oidc" | "local";
   action: string;
   resourceId: string;
   requestId?: string;

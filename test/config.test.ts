@@ -191,9 +191,15 @@ describe("loadConfig", () => {
     });
   });
 
-  it("requires a separate administrator token with PostgreSQL", () => {
-    expect(() => loadConfig({ DATABASE_URL: "postgres://localhost/aigateway" }))
-      .toThrow("Administrator authentication is required");
+  it("defaults to first-owner local authentication in development", () => {
+    expect(loadConfig({ DATABASE_URL: "postgres://localhost/aigateway" }).adminAuth.mode).toBe("local");
+  });
+
+  it("requires explicit local-auth secrets in production", () => {
+    const base = { NODE_ENV: "production", ADMIN_AUTH_MODE: "local", DATABASE_URL: "postgres://localhost/aigateway", GATEWAY_KEY_PEPPER: "p".repeat(32), METRICS_ENABLED: "false" };
+    expect(() => loadConfig(base)).toThrow("ADMIN_LOCAL_TOKEN_SECRET");
+    expect(() => loadConfig({ ...base, ADMIN_LOCAL_TOKEN_SECRET: "s".repeat(32) })).toThrow("ADMIN_LOCAL_BOOTSTRAP_TOKEN");
+    expect(loadConfig({ ...base, ADMIN_LOCAL_TOKEN_SECRET: "s".repeat(32), ADMIN_LOCAL_BOOTSTRAP_TOKEN: "b".repeat(32) }).adminAuth.mode).toBe("local");
   });
 
   it("allows database-backed production without environment-seeded keys", () => {

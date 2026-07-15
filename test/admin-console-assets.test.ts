@@ -51,4 +51,16 @@ describe("Next.js administrator console", () => {
     expect(routes).toContain("RotationListQuery");
     expect(routes).toContain('/admin/v1/notifications/:notificationId/read');
   });
+
+  it("supports one-time local Owner bootstrap without exposing the access token", async () => {
+    const consoleSource = await read("apps/admin-console/components/admin-console.tsx");
+    const bootstrap = await read("apps/admin-console/app/api/auth/local/bootstrap/route.ts");
+    const localAuth = await read("src/admin-auth/local.ts");
+    expect(consoleSource).toContain("创建主组织并进入");
+    expect(bootstrap).toContain("createSession");
+    expect(bootstrap).not.toContain("accessToken: body.accessToken");
+    expect(localAuth).toContain('open(this.config.accountFile, "wx"');
+    expect(localAuth).toContain("scrypt");
+    expect(localAuth).not.toContain("console.log");
+  });
 });

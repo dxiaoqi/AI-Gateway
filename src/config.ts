@@ -1,4 +1,5 @@
 import type { VirtualKeySeed } from "./auth/types.js";
+import { createHash } from "node:crypto";
 import type { AdminRole } from "./admin-auth/types.js";
 import type { QuotaLimits, QuotaPolicy, QuotaScope } from "./quota/types.js";
 
@@ -42,7 +43,19 @@ export interface GatewayConfig {
 export type AdminAuthConfig =
   | { mode: "disabled" }
   | { mode: "static"; bearerToken: string }
+  | AdminLocalConfig
   | AdminOidcConfig;
+
+export interface AdminLocalConfig {
+  mode: "local";
+  issuer: "aigateway-local";
+  audience: "aigateway-admin";
+  tokenSecret: string;
+  accountFile: string;
+  bootstrapToken?: string;
+  accessTokenTtlSeconds: number;
+  production: boolean;
+}
 
 export interface AdminOidcConfig {
   mode: "oidc";
@@ -262,8 +275,23 @@ const parseRoleMap = (value: string | undefined): Readonly<Record<string, AdminR
 };
 
 const parseAdminAuth = (env: NodeJS.ProcessEnv, environment: string): AdminAuthConfig => {
-  const mode = env.ADMIN_AUTH_MODE ?? (env.ADMIN_OIDC_ISSUER ? "oidc" : env.ADMIN_BEARER_TOKEN ? "static" : "disabled");
+  const mode = env.ADMIN_AUTH_MODE ?? (env.ADMIN_OIDC_ISSUER ? "oidc" : env.ADMIN_BEARER_TOKEN ? "static" : environment === "production" ? "disabled" : "local");
   if (mode === "disabled") return { mode };
+  if (mode === "local") {
+    const tokenSecret = env.ADMIN_LOCAL_TOKEN_SECRET ?? (environment === "production" ? "" : createHash("sha256").update(`${env.GATEWAY_KEY_PEPPER ?? "local-development-pepper"}:local-admin-token`).digest("hex"));
+    if (tokenSecret.length < 32) throw new Error("ADMIN_LOCAL_TOKEN_SECRET must contain at least 32 characters");
+    if (environment === "production" && (!env.ADMIN_LOCAL_BOOTSTRAP_TOKEN || env.ADMIN_LOCAL_BOOTSTRAP_TOKEN.length < 32)) throw new Error("ADMIN_LOCAL_BOOTSTRAP_TOKEN must contain at least 32 characters for local authentication in production");
+    return {
+      mode,
+      issuer: "aigateway-local",
+      audience: "aigateway-admin",
+      tokenSecret,
+      accountFile: env.ADMIN_LOCAL_ACCOUNT_FILE ?? ".data/admin-local-owner.json",
+      ...(env.ADMIN_LOCAL_BOOTSTRAP_TOKEN ? { bootstrapToken: env.ADMIN_LOCAL_BOOTSTRAP_TOKEN } : {}),
+      accessTokenTtlSeconds: parsePositiveInteger("ADMIN_LOCAL_ACCESS_TOKEN_TTL_SECONDS", env.ADMIN_LOCAL_ACCESS_TOKEN_TTL_SECONDS ?? "900"),
+      production: environment === "production",
+    };
+  }
   if (mode === "static") {
     if (!env.ADMIN_BEARER_TOKEN) throw new Error("ADMIN_BEARER_TOKEN is required when ADMIN_AUTH_MODE=static");
     if (environment === "production" && !parseBoolean(
@@ -274,7 +302,7 @@ const parseAdminAuth = (env: NodeJS.ProcessEnv, environment: string): AdminAuthC
     }
     return { mode, bearerToken: env.ADMIN_BEARER_TOKEN };
   }
-  if (mode !== "oidc") throw new Error("ADMIN_AUTH_MODE must be disabled, static or oidc");
+  if (mode !== "oidc") throw new Error("ADMIN_AUTH_MODE must be disabled, local, static or oidc");
 
   const issuer = requiredAdminValue(env, "ADMIN_OIDC_ISSUER");
   const audience = requiredAdminValue(env, "ADMIN_OIDC_AUDIENCE");

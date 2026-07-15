@@ -38,7 +38,7 @@ interface AuditRow {
   actor_issuer: string | null;
   actor_roles: string[] | null;
   actor_tenant_scopes: string[] | null;
-  auth_method: "static" | "oidc" | null;
+  auth_method: "static" | "oidc" | "local" | null;
   tenant_id: string | null;
   action: AuditEvent["action"];
   resource_type: "virtual_key";

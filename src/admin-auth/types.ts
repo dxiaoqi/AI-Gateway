@@ -14,7 +14,7 @@ export interface AdminIdentity {
   issuer: string;
   roles: readonly AdminRole[];
   tenantScopes: readonly string[];
-  authMethod: "static" | "oidc";
+  authMethod: "static" | "oidc" | "local";
 }
 
 export interface AdminAuthenticator {

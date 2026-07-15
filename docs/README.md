@@ -26,6 +26,7 @@
 | Iteration 16 | 0.16.0 | Completed | 动态配额策略管理与请求执行 | [详细记录](./iterations/iteration-16-quota-policy-management.md) |
 | Iteration 17 | 0.17.0 | Completed | Token 定价、用量聚合与月度预算 | [详细记录](./iterations/iteration-17-cost-budget-governance.md) |
 | Iteration 18 | 0.18.0 | Completed (Baseline) | 企业安全护栏与请求前阻断 | [详细记录](./iterations/iteration-18-enterprise-guardrails.md) |
+| Iteration 19 | 0.19.0 | Completed | 主组织 Owner 首次注册与密码登录 | [详细记录](./iterations/iteration-19-local-owner-bootstrap.md) |
 
 ## 如何 Review
 
@@ -52,6 +53,7 @@
 - [ADR 0012：OIDC BFF 与服务端不透明 Session](./adr/0012-oidc-bff-server-session.md)
 - [ADR 0013：事务内租户通知与独立已读回执](./adr/0013-tenant-notification-inbox.md)
 - [ADR 0015：统一治理资源与运行时执行](./adr/0015-governance-resources-and-runtime-enforcement.md)
+- [ADR 0016：首次启动主组织 Owner 与本地密码认证](./adr/0016-local-owner-bootstrap.md)
 
 ## 值班手册
 
