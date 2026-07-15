@@ -1,0 +1,80 @@
+groups:
+  - name: aigateway-availability
+    rules:
+      - alert: AIGatewayTargetDown
+        expr: up{job="aigateway"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: enterprise-ai-gateway
+        annotations:
+          summary: AI Gateway metrics target is unavailable
+          description: Prometheus has failed to scrape {{ $labels.instance }} for more than one minute.
+          runbook_url: http://localhost:3001/d/aigw-overview/ai-gateway-overview
+
+      - alert: AIGatewayHigh5xxRatio
+        expr: aigw:http_5xx_ratio5m > 0.05 and sum(aigw:http_request_rate5m) > 0.1
+        for: 10m
+        labels:
+          severity: critical
+          service: enterprise-ai-gateway
+        annotations:
+          summary: AI Gateway 5xx ratio is above 5%
+          description: The five-minute 5xx ratio has remained above 5% for ten minutes.
+          runbook_url: http://localhost:3001/d/aigw-overview/ai-gateway-overview
+
+      - alert: AIGatewayHighLatency
+        expr: max(aigw:http_latency_p95_seconds5m) > 5
+        for: 10m
+        labels:
+          severity: warning
+          service: enterprise-ai-gateway
+        annotations:
+          summary: AI Gateway P95 latency is above five seconds
+          description: At least one route has exceeded the P95 latency threshold for ten minutes.
+          runbook_url: http://localhost:3001/d/aigw-overview/ai-gateway-overview
+
+  - name: aigateway-provider
+    rules:
+      - alert: AIProviderHighErrorRatio
+        expr: aigw:provider_error_ratio5m > 0.20 and aigw:provider_attempt_total_rate5m > 0.05
+        for: 10m
+        labels:
+          severity: warning
+          service: enterprise-ai-gateway
+        annotations:
+          summary: AI Provider deployment error ratio is above 20%
+          description: Deployment {{ $labels.deployment }} has remained above the error threshold.
+          runbook_url: http://localhost:3001/d/aigw-overview/ai-gateway-overview
+
+      - alert: AIProviderCircuitOpened
+        expr: increase(aigw_routing_events_total{event="circuit_open"}[5m]) > 0
+        labels:
+          severity: warning
+          service: enterprise-ai-gateway
+        annotations:
+          summary: AI Provider circuit breaker opened
+          description: Deployment {{ $labels.deployment }} opened its circuit breaker in the last five minutes.
+          runbook_url: http://localhost:3001/d/aigw-overview/ai-gateway-overview
+
+      - alert: AIProviderActiveRequestsHigh
+        expr: sum by (logical_model, deployment) (aigw_provider_requests_active) > 50
+        for: 10m
+        labels:
+          severity: warning
+          service: enterprise-ai-gateway
+        annotations:
+          summary: AI Provider active request count is high
+          description: Deployment {{ $labels.deployment }} has more than 50 active requests.
+          runbook_url: http://localhost:3001/d/aigw-overview/ai-gateway-overview
+
+      - alert: AIGatewayQuotaRejectionsHigh
+        expr: sum(increase(aigw_errors_total{code=~"quota_.*_exceeded"}[5m])) > 10
+        for: 5m
+        labels:
+          severity: warning
+          service: enterprise-ai-gateway
+        annotations:
+          summary: AI Gateway quota rejections are elevated
+          description: More than ten quota rejections occurred in five minutes.
+          runbook_url: http://localhost:3001/d/aigw-overview/ai-gateway-overview

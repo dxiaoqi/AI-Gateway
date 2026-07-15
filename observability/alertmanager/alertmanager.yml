@@ -1,0 +1,24 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: local-review
+  group_by: [alertname, service, logical_model, deployment]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - matchers:
+        - severity="critical"
+      receiver: local-review
+      repeat_interval: 1h
+
+receivers:
+  - name: local-review
+
+inhibit_rules:
+  - source_matchers:
+      - alertname="AIGatewayTargetDown"
+    target_matchers:
+      - service="enterprise-ai-gateway"
+    equal: [service]

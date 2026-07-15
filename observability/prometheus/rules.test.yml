@@ -1,0 +1,47 @@
+rule_files:
+  - rules/recording.yml
+  - rules/alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: gateway target down becomes critical after one minute
+    interval: 1m
+    input_series:
+      - series: 'up{job="aigateway",instance="host.docker.internal:3000"}'
+        values: '0 0 0'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: AIGatewayTargetDown
+        exp_alerts:
+          - exp_labels:
+              alertname: AIGatewayTargetDown
+              instance: host.docker.internal:3000
+              job: aigateway
+              service: enterprise-ai-gateway
+              severity: critical
+            exp_annotations:
+              summary: AI Gateway metrics target is unavailable
+              description: Prometheus has failed to scrape host.docker.internal:3000 for more than one minute.
+              runbook_url: http://localhost:3001/d/aigw-overview/ai-gateway-overview
+
+  - name: circuit open event emits a provider warning
+    interval: 1m
+    input_series:
+      - series: 'aigw_routing_events_total{logical_model="general",deployment="primary",event="circuit_open"}'
+        values: '0 0 1 1 1'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: AIProviderCircuitOpened
+        exp_alerts:
+          - exp_labels:
+              alertname: AIProviderCircuitOpened
+              deployment: primary
+              event: circuit_open
+              logical_model: general
+              service: enterprise-ai-gateway
+              severity: warning
+            exp_annotations:
+              summary: AI Provider circuit breaker opened
+              description: Deployment primary opened its circuit breaker in the last five minutes.
+              runbook_url: http://localhost:3001/d/aigw-overview/ai-gateway-overview

@@ -1,0 +1,53 @@
+{
+  "name": "enterprise-ai-gateway",
+  "version": "0.11.0",
+  "private": true,
+  "workspaces": [
+    "apps/admin-console"
+  ],
+  "description": "A production-oriented AI gateway built iteratively with Node.js and TypeScript.",
+  "type": "module",
+  "engines": {
+    "node": ">=20.18.0"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/index.js",
+    "verify": "npm run typecheck && npm test && npm run build && npm run admin:build",
+    "admin:dev": "npm run dev --workspace @aigateway/admin-console",
+    "admin:build": "npm run build --workspace @aigateway/admin-console",
+    "admin:start": "npm run start --workspace @aigateway/admin-console",
+    "smoke:admin": "node scripts/admin-console-smoke.mjs",
+    "smoke": "node scripts/smoke.mjs",
+    "observability:up": "docker compose --profile observability up -d prometheus alertmanager grafana",
+    "observability:down": "docker compose --profile observability rm -f -s grafana prometheus alertmanager",
+    "observability:check": "node scripts/observability-check.mjs",
+    "test:observability": "node scripts/validate-observability.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:redis": "vitest run test/redis-integration.test.ts",
+    "control-plane:up": "docker compose --profile control-plane up -d postgres",
+    "control-plane:down": "docker compose --profile control-plane rm -f -s postgres",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "smoke:control-plane": "node scripts/control-plane-smoke.mjs",
+    "smoke:oidc": "tsx scripts/oidc-smoke.ts",
+    "test:postgres": "vitest run test/postgres-control-plane.integration.test.ts",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "^0.34.38",
+    "dotenv": "^17.4.2",
+    "fastify": "^5.6.1",
+    "jose": "^6.2.3",
+    "pg": "^8.22.0",
+    "redis": "^6.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.17",
+    "@types/pg": "^8.20.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

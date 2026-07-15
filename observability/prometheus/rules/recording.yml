@@ -1,0 +1,51 @@
+groups:
+  - name: aigateway-sli-recording
+    interval: 30s
+    rules:
+      - record: aigw:http_request_rate5m
+        expr: sum by (route, method) (rate(aigw_http_requests_total[5m]))
+
+      - record: aigw:http_5xx_ratio5m
+        expr: |
+          (sum(rate(aigw_http_requests_total{status=~"5.."}[5m])) or vector(0))
+          /
+          clamp_min(sum(rate(aigw_http_requests_total[5m])), 0.001)
+
+      - record: aigw:http_success_ratio5m
+        expr: 1 - aigw:http_5xx_ratio5m
+
+      - record: aigw:http_latency_p95_seconds5m
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le, route) (rate(aigw_http_request_duration_seconds_bucket[5m]))
+          )
+
+      - record: aigw:provider_attempt_rate5m
+        expr: sum by (logical_model, deployment, outcome) (rate(aigw_provider_requests_total[5m]))
+
+      - record: aigw:provider_attempt_total_rate5m
+        expr: sum by (logical_model, deployment) (rate(aigw_provider_requests_total[5m]))
+
+      - record: aigw:provider_error_ratio5m
+        expr: |
+          sum by (logical_model, deployment) (
+            rate(aigw_provider_requests_total{outcome="error"}[5m])
+          )
+          /
+          clamp_min(
+            sum by (logical_model, deployment) (rate(aigw_provider_requests_total[5m])),
+            0.001
+          )
+
+      - record: aigw:provider_latency_p95_seconds5m
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le, logical_model, deployment) (
+              rate(aigw_provider_request_duration_seconds_bucket[5m])
+            )
+          )
+
+      - record: aigw:token_rate5m
+        expr: sum by (logical_model, deployment, direction) (rate(aigw_tokens_total[5m]))

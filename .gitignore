@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.next/
+apps/admin-console/.next/
+apps/admin-console/.env.local
+coverage/
+.env
+*.log
+.DS_Store
+observability/secrets/metrics-token
