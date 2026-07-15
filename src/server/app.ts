@@ -14,11 +14,13 @@ import { ProviderRegistry } from "../providers/registry.js";
 import { ModelRouter } from "../routing/model-router.js";
 import { createQuotaRuntime } from "../quota/factory.js";
 import type { QuotaService } from "../quota/service.js";
+import type { GovernanceService } from "../governance/service.js";
 import { registerChatCompletionRoutes } from "./routes/chat-completions.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerModelRoutes } from "./routes/models.js";
 import { registerMetricsRoutes } from "./routes/metrics.js";
 import { registerAdminVirtualKeyRoutes } from "./routes/admin-virtual-keys.js";
+import { registerAdminGovernanceRoutes } from "./routes/admin-governance.js";
 import "./fastify.js";
 
 export interface AppDependencies {
@@ -30,6 +32,7 @@ export interface AppDependencies {
   controlPlaneService?: VirtualKeyControlPlaneService;
   readiness?: () => Promise<void>;
   adminAuthorizationService?: AdminAuthorizationService;
+  governanceService?: GovernanceService;
 }
 
 const unauthenticatedPaths = new Set(["/health/live", "/health/ready"]);
@@ -66,7 +69,7 @@ export const buildApp = async (
     ? undefined
     : await createControlPlaneRuntime(dependencies.config, (error) => {
         app.log.error({ err: error }, "postgres control-plane pool error");
-      });
+      }, registry);
   if (controlPlaneRuntime) {
     app.log.info("postgres virtual-key control plane initialized");
     app.addHook("onClose", async () => controlPlaneRuntime.close());
@@ -213,6 +216,7 @@ export const buildApp = async (
     });
   }
   const controlPlaneService = dependencies.controlPlaneService ?? controlPlaneRuntime?.service;
+  const governanceService = dependencies.governanceService ?? controlPlaneRuntime?.governanceService;
   const adminAuthorization = dependencies.adminAuthorizationService ?? createAdminAuthorizationService(dependencies.config);
   if (controlPlaneService && adminAuthorization) {
     await registerAdminVirtualKeyRoutes(app, {
@@ -221,6 +225,10 @@ export const buildApp = async (
       rotationApprovalRequired: dependencies.config.rotationApprovalRequired,
     });
   }
+  if (governanceService && adminAuthorization) {
+    quotaService.setDynamicPolicySource((context) => governanceService.quotaPolicies(context));
+    await registerAdminGovernanceRoutes(app, { service: governanceService, authorization: adminAuthorization });
+  }
   await registerModelRoutes(app, { authService, registry });
   await registerChatCompletionRoutes(app, {
     config: dependencies.config,
@@ -228,6 +236,7 @@ export const buildApp = async (
     quotaService,
     registry,
     router,
+    ...(governanceService ? { governanceService } : {}),
   });
 
   return app;

@@ -21,6 +21,11 @@
 | Iteration 11 | 0.11.0 | Completed | Next.js 管理后台、受限 BFF 与可视化控制面 | [详细记录](./iterations/iteration-11-nextjs-admin-console.md) |
 | Iteration 12 | 0.12.0 | Completed | OIDC Code + PKCE、服务端 Session、CSRF 与退出 | [详细记录](./iterations/iteration-12-admin-oidc-session.md) |
 | Iteration 13 | 0.13.0 | Completed | 审批拒绝/撤销、决策理由、状态筛选与站内通知 | [详细记录](./iterations/iteration-13-approval-closure-notifications.md) |
+| Iteration 14 | — | Deferred | 外部通知 Outbox（按产品优先级后置） | — |
+| Iteration 15 | 0.15.0 | Completed | 模型部署目录、凭证引用与热发布 | [详细记录](./iterations/iteration-15-model-deployment-management.md) |
+| Iteration 16 | 0.16.0 | Completed | 动态配额策略管理与请求执行 | [详细记录](./iterations/iteration-16-quota-policy-management.md) |
+| Iteration 17 | 0.17.0 | Completed | Token 定价、用量聚合与月度预算 | [详细记录](./iterations/iteration-17-cost-budget-governance.md) |
+| Iteration 18 | 0.18.0 | Completed (Baseline) | 企业安全护栏与请求前阻断 | [详细记录](./iterations/iteration-18-enterprise-guardrails.md) |
 
 ## 如何 Review
 
@@ -46,6 +51,7 @@
 - [ADR 0011：独立 Next.js 管理后台与受限 BFF](./adr/0011-nextjs-admin-console-and-bff.md)
 - [ADR 0012：OIDC BFF 与服务端不透明 Session](./adr/0012-oidc-bff-server-session.md)
 - [ADR 0013：事务内租户通知与独立已读回执](./adr/0013-tenant-notification-inbox.md)
+- [ADR 0015：统一治理资源与运行时执行](./adr/0015-governance-resources-and-runtime-enforcement.md)
 
 ## 值班手册
 
@@ -54,6 +60,7 @@
 - [管理员 OIDC 与 RBAC 运维手册](./runbooks/admin-oidc-rbac.md)
 - [租户访问与双人 Key 轮换手册](./runbooks/tenant-access-and-rotation-approval.md)
 - [Next.js 管理后台操作手册](./runbooks/admin-console.md)
+- [模型、配额、预算与 Guardrail 操作手册](./runbooks/governance-operations.md)
 
 ## 后续迭代规则
 

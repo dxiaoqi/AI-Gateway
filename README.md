@@ -1,6 +1,6 @@
 # Enterprise AI Gateway
 
-一个以可运行迭代方式建设的 Node.js/TypeScript 企业 AI Gateway。目前完成 **Iteration 13**：虚拟 Key 轮换已形成申请、批准、拒绝、撤销和过期的完整状态机，并加入必填决策理由、状态筛选、租户站内通知和个人已读回执。
+一个以可运行迭代方式建设的 Node.js/TypeScript 企业 AI Gateway。目前完成 **Iteration 18**：在已有身份、配额、路由、可观测性、Key 控制面与审批后台之上，新增模型部署、动态配额、成本预算和 Guardrail 管理，并接入实际请求链路。Iteration 14 外部通知按产品优先级后置。
 
 更完整的能力与实施路线见 [AI_GATEWAY_RESEARCH.md](./AI_GATEWAY_RESEARCH.md)。
 
@@ -266,6 +266,12 @@ npm run smoke:oidc
 - OIDC Authorization Code + PKCE、state、nonce 与 JWKS ID Token 验证
 - Redis/内存服务端 Session、HttpOnly Cookie、CSRF、退出与过期控制
 - 浏览器不持有 Gateway Access Token；一次性 Key 专用提示与关闭清除
+- PostgreSQL 模型部署目录、凭证引用、启停与进程内热发布
+- 租户/项目/应用/Key 四级动态 RPM、TPM、并发策略管理
+- CNY/USD 模型定价、本月用量聚合与租户月度预算硬阻断
+- PII、Prompt Injection、Content Safety 租户 Guardrail 基线
+- 统一治理资源 RBAC、Tenant Scope、If-Match 乐观锁和治理审计
+- Next.js 模型、配额、成本预算和安全护栏管理页面
 - 上游超时与统一错误格式
 - JSON Schema 请求校验
 - 健康检查和优雅退出
@@ -275,12 +281,11 @@ npm run smoke:oidc
 明确未实现：
 
 - Anthropic 原生协议与 Tool Calling（按当前产品方向明确后移）
-- 模型部署与配额策略的 PostgreSQL 管理 API
-- 金额预算、价格表和 Provider 账单对账
+- Provider 账单对账、原子预算预留、预算预警投递和多币种汇率
 - 跨网关实例共享的路由健康状态与全局自适应负载均衡
 - OpenTelemetry SDK/Collector 导出与分布式 Span
 - 外部邮件/IM/Webhook 通知投递、正式 SLO 审批和团队级责任人轮值
-- project/application 细粒度管理范围和 Guardrail
+- project/application 细粒度管理员范围、专业 DLP/内容安全服务和输出护栏
 
 这些能力会按照迭代计划逐步加入，避免在核心协议与流式行为稳定前过早引入分布式状态。OpenAI-compatible Adapter 已可连接真实服务，但当前自动化测试完全使用可注入 HTTP Client，不消耗模型额度。
 
@@ -292,6 +297,7 @@ src/
 ├── auth/       # 虚拟 Key、认证仓库、租户上下文和模型 ACL
 ├── control-plane/ # PostgreSQL migration、Key 生命周期、审计和运行时
 ├── core/       # Canonical schema、错误与请求上下文
+├── governance/ # 模型、动态配额、定价预算、Guardrail 与用量聚合
 ├── providers/  # Provider 接口、实现和逻辑模型注册
 ├── quota/      # Token 估算、策略匹配、预留/结算和 Redis Store
 ├── routing/    # 多部署选择、冷却、熔断和失败切换
@@ -307,4 +313,4 @@ apps/admin-console/ # Next.js App Router 管理后台与受限 BFF
 
 ## 安全说明
 
-默认 Key、静态 Admin Token 和 Pepper 只用于本地开发。服务不会记录 Authorization Header、JWT、Key 摘要或请求正文；普通日志只记录哈希化 actor id 和内部 roles。受控的 PostgreSQL 审计表会保存 subject、issuer、roles 和 tenant scopes，用于责任追溯，因此必须配置数据库访问控制与保留期限。生产应使用 OIDC，为每名管理员签发权威 tenant scope，并保持双人轮换开启。project/application 细粒度范围和 Pepper 在线轮换仍属于后续迭代。
+默认 Key、静态 Admin Token 和 Pepper 只用于本地开发。服务不会记录 Authorization Header、JWT、Key 摘要或请求正文；普通日志只记录哈希化 actor id 和内部 roles。受控的 PostgreSQL 审计表会保存 subject、issuer、roles 和 tenant scopes，用于责任追溯，因此必须配置数据库访问控制与保留期限。生产应使用 OIDC，为每名管理员签发权威 tenant scope，并保持双人轮换开启。当前 Guardrail 是正则基线而非专业 DLP；project/application 细粒度管理员范围和 Pepper 在线轮换仍属于后续迭代。

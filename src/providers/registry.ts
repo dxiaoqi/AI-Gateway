@@ -37,6 +37,23 @@ export class ProviderRegistry {
     this.deployments.set(logicalModel, [...current, deployment]);
   }
 
+  upsert(
+    logicalModel: string,
+    provider: ModelProvider,
+    options: { id: string; priority?: number; weight?: number },
+  ): void {
+    this.remove(options.id);
+    this.register(logicalModel, provider, options);
+  }
+
+  remove(deploymentId: string): void {
+    for (const [model, items] of this.deployments.entries()) {
+      const next = items.filter((item) => item.id !== deploymentId);
+      if (next.length === 0) this.deployments.delete(model);
+      else if (next.length !== items.length) this.deployments.set(model, next);
+    }
+  }
+
   resolve(logicalModel: string): ModelDeployment {
     return this.getDeployments(logicalModel)[0] as ModelDeployment;
   }

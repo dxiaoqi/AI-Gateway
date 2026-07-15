@@ -11,6 +11,7 @@ import type { QuotaReservation } from "../../quota/types.js";
 import type { ProviderRegistry } from "../../providers/registry.js";
 import type { ModelDeployment } from "../../providers/registry.js";
 import type { ModelRouter } from "../../routing/model-router.js";
+import type { GovernanceService } from "../../governance/service.js";
 import {
   ChatCompletionRequestSchema,
   type ChatCompletionRequest,
@@ -22,7 +23,21 @@ interface RouteDependencies {
   quotaService: QuotaService;
   registry: ProviderRegistry;
   router: ModelRouter;
+  governanceService?: GovernanceService;
 }
+
+const enforceGovernance = async (request: FastifyRequest<{ Body: ChatCompletionRequest }>, service?: GovernanceService) => {
+  if (!service || !request.authContext) return;
+  const content = request.body.messages.map((message) => message.content).join("\n");
+  await service.inspect(request.authContext, content);
+  await service.assertBudget(request.authContext);
+};
+
+const recordUsageSafely = async (request: FastifyRequest, service: GovernanceService | undefined, model: string, inputTokens: number, outputTokens: number) => {
+  if (!service || !request.authContext) return;
+  try { await service.recordUsage(request.authContext, model, inputTokens, outputTokens); }
+  catch (error) { request.log.error({ err: error, requestId: request.id, traceId: request.traceContext?.traceId }, "governance usage recording failed"); }
+};
 
 const toCanonicalRequest = (
   body: ChatCompletionRequest,
@@ -240,6 +255,8 @@ const streamCompletion = async (
   const created = Math.floor(Date.now() / 1000);
   let headersSent = false;
   let actualTokens: number | undefined;
+  let inputTokens = 0;
+  let outputTokens = 0;
 
   try {
     lifetime = createRequestLifetime(
@@ -299,6 +316,8 @@ const streamCompletion = async (
       if (result.done) break;
       if (result.value.type === "usage") {
         actualTokens = result.value.usage.totalTokens;
+        inputTokens = result.value.usage.inputTokens;
+        outputTokens = result.value.usage.outputTokens;
         dependencies.router.recordStreamTokens(
           deployment,
           result.value.usage.inputTokens,
@@ -328,6 +347,7 @@ const streamCompletion = async (
       reservation,
       actualTokens ?? reservation?.reservedTokens ?? 0,
     );
+    await recordUsageSafely(request, dependencies.governanceService, request.body.model, inputTokens, outputTokens);
     await writeSse(reply, "[DONE]", lifetime.context.signal);
     reply.raw.end();
     return reply;
@@ -387,6 +407,7 @@ export const registerChatCompletionRoutes = async (
     "/v1/chat/completions",
     { schema: { body: ChatCompletionRequestSchema } },
     async (request, reply) => {
+      await enforceGovernance(request, dependencies.governanceService);
       if (request.body.stream === true) {
         return streamCompletion(request, reply, dependencies);
       }
@@ -436,6 +457,7 @@ export const registerChatCompletionRoutes = async (
           reservation,
           response.usage.totalTokens,
         );
+        await recordUsageSafely(request, dependencies.governanceService, request.body.model, response.usage.inputTokens, response.usage.outputTokens);
 
         return {
           id: response.id,

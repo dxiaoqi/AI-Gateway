@@ -4,6 +4,8 @@ export type AdminPermission =
   | "virtual_keys:create"
   | "virtual_keys:update"
   | "virtual_keys:rotate"
+  | "governance:read"
+  | "governance:write"
   | "audit:read";
 
 export interface AdminIdentity {

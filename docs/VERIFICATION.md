@@ -1,6 +1,6 @@
 # 当前版本验证手册
 
-适用版本：`0.13.0`。
+适用版本：`0.18.0`。
 
 验证分为三层。第一层不启动端口、不访问真实模型，适合每次提交前执行；第二层验证真实 HTTP/SSE；第三层显式调用你配置的真实 Provider，会消耗少量 Token。
 
@@ -23,13 +23,21 @@ TypeScript strict typecheck
 当前基线预期：
 
 ```text
-Test Files: 19 passed, 2 integration files skipped
-Tests:      80 passed, 3 integration tests skipped
+Test Files: 20 passed, 2 integration files skipped
+Tests:      85 passed, 3 integration tests skipped
 Gateway build: success
 Next.js build: success
 ```
 
-覆盖范围：此前全部能力，以及 OIDC 签名与 Claims、tenant scope、双人轮换，以及 Next 管理 Token 内存边界、BFF 路径限制、管理员 `/me` 身份和生产构建。
+覆盖范围：此前全部能力，以及模型部署热发布、动态配额、成本预算、Guardrail 阻断、OIDC 签名与 Claims、tenant scope、双人轮换、BFF 路径限制和生产构建。
+
+只验证 Iteration 15–18：
+
+```bash
+npx vitest run test/governance-http.test.ts
+```
+
+预期 3 项端到端测试通过，分别覆盖模型热启停、配额/护栏执行、计费/预算阻断。
 
 Redis 集成测试默认跳过，避免要求每位新人先安装 Redis。需要验证真实 Lua 时：
 

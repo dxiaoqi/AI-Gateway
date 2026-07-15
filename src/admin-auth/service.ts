@@ -5,13 +5,15 @@ import { GatewayError } from "../core/errors.js";
 import type { AdminAuthenticator, AdminIdentity, AdminPermission, AdminRole } from "./types.js";
 
 const rolePermissions: Readonly<Record<AdminRole, ReadonlySet<AdminPermission>>> = {
-  viewer: new Set(["virtual_keys:read", "audit:read"]),
-  operator: new Set(["virtual_keys:read", "virtual_keys:create", "virtual_keys:update", "audit:read"]),
+  viewer: new Set(["virtual_keys:read", "governance:read", "audit:read"]),
+  operator: new Set(["virtual_keys:read", "virtual_keys:create", "virtual_keys:update", "governance:read", "governance:write", "audit:read"]),
   admin: new Set([
     "virtual_keys:read",
     "virtual_keys:create",
     "virtual_keys:update",
     "virtual_keys:rotate",
+    "governance:read",
+    "governance:write",
     "audit:read",
   ]),
 };

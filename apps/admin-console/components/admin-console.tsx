@@ -9,9 +9,11 @@ import type {
   ListResponse,
   RotationRequest,
   VirtualKey,
+  GovernanceResource,
 } from "@/lib/types";
+import { GovernancePanel } from "@/components/governance-panel";
 
-type View = "overview" | "keys" | "approvals" | "notifications" | "audit";
+type View = "overview" | "keys" | "models" | "quotas" | "costs" | "guardrails" | "approvals" | "notifications" | "audit";
 type Notice = { message: string; error: boolean } | null;
 type KeyForm = {
   mode: "create" | "edit";
@@ -35,6 +37,10 @@ const emptyKeyForm: KeyForm = {
 const viewLabels: Record<View, [string, string]> = {
   overview: ["OVERVIEW", "运行总览"],
   keys: ["VIRTUAL KEYS", "虚拟 Key"],
+  models: ["MODEL DEPLOYMENTS", "模型部署"],
+  quotas: ["QUOTA POLICIES", "配额策略"],
+  costs: ["COST & BUDGET", "成本预算"],
+  guardrails: ["GUARDRAILS", "安全护栏"],
   approvals: ["ROTATION APPROVALS", "轮换审批"],
   notifications: ["NOTIFICATION INBOX", "通知中心"],
   audit: ["AUDIT TRAIL", "审计记录"],
@@ -99,6 +105,11 @@ export function AdminConsole() {
   const [approvals, setApprovals] = useState<RotationRequest[]>([]);
   const [notifications, setNotifications] = useState<AdminNotification[]>([]);
   const [audit, setAudit] = useState<AuditEvent[]>([]);
+  const [models, setModels] = useState<GovernanceResource[]>([]);
+  const [quotas, setQuotas] = useState<GovernanceResource[]>([]);
+  const [pricing, setPricing] = useState<GovernanceResource[]>([]);
+  const [budgets, setBudgets] = useState<GovernanceResource[]>([]);
+  const [guardrails, setGuardrails] = useState<GovernanceResource[]>([]);
   const [view, setView] = useState<View>("overview");
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
@@ -129,18 +140,24 @@ export function AdminConsole() {
   };
 
   const loadData = async (csrf = csrfToken) => {
-    const [me, keyList, requestList, notificationList, eventList] = await Promise.all([
+    const [me, keyList, requestList, notificationList, eventList, modelList, quotaList, pricingList, budgetList, guardrailList] = await Promise.all([
       gatewayRequest<AdminIdentity>(csrf, "me"),
       gatewayRequest<ListResponse<VirtualKey>>(csrf, "virtual-keys?limit=200"),
       gatewayRequest<ListResponse<RotationRequest>>(csrf, "rotation-requests?limit=200"),
       gatewayRequest<ListResponse<AdminNotification>>(csrf, "notifications?limit=100"),
       gatewayRequest<ListResponse<AuditEvent>>(csrf, "audit-events?limit=100"),
+      gatewayRequest<ListResponse<GovernanceResource>>(csrf, "model-deployments"),
+      gatewayRequest<ListResponse<GovernanceResource>>(csrf, "quota-policies"),
+      gatewayRequest<ListResponse<GovernanceResource>>(csrf, "pricing-rules"),
+      gatewayRequest<ListResponse<GovernanceResource>>(csrf, "budgets"),
+      gatewayRequest<ListResponse<GovernanceResource>>(csrf, "guardrail-policies"),
     ]);
     setIdentity(me);
     setKeys(keyList.data);
     setApprovals(requestList.data);
     setNotifications(notificationList.data);
     setAudit(eventList.data);
+    setModels(modelList.data); setQuotas(quotaList.data); setPricing(pricingList.data); setBudgets(budgetList.data); setGuardrails(guardrailList.data);
   };
 
   useEffect(() => {
@@ -207,6 +224,7 @@ export function AdminConsole() {
       setApprovals([]);
       setNotifications([]);
       setAudit([]);
+      setModels([]); setQuotas([]); setPricing([]); setBudgets([]); setGuardrails([]);
       setView("overview");
       alert("服务端会话已退出");
     }
@@ -328,7 +346,7 @@ export function AdminConsole() {
           <div className="security-note"><span>●</span> HttpOnly 会话 · 同源 BFF · CSRF 校验 · 默认拒绝</div>
         </section>
         <aside className="login-aside">
-          <div className="aside-top"><span>AI GATEWAY</span><span>v0.13</span></div>
+          <div className="aside-top"><span>AI GATEWAY</span><span>v0.18</span></div>
           <div className="signal-card"><p>PLATFORM SIGNAL</p><strong>身份 × 范围 × 审批</strong><div className="signal-line"><i /><i /><i /><i /><i /></div></div>
           <p className="aside-quote">“网关不是另一个代理层，<br />而是企业 AI 的策略执行点。”</p>
         </aside>
@@ -342,9 +360,9 @@ export function AdminConsole() {
       <aside className="sidebar">
         <div className="sidebar-brand"><BrandMark small /><div><strong>AI Gateway</strong><small>Control plane</small></div></div>
         <nav aria-label="管理后台导航">
-          {(["overview", "keys", "approvals", "notifications", "audit"] as View[]).map((item) => (
+          {(["overview", "keys", "models", "quotas", "costs", "guardrails", "approvals", "notifications", "audit"] as View[]).map((item) => (
             <button key={item} className={`nav-item${view === item ? " active" : ""}`} onClick={() => setView(item)}>
-              <span>{item === "overview" ? "◫" : item === "keys" ? "⌁" : item === "approvals" ? "✓" : item === "notifications" ? "●" : "≡"}</span>
+              <span>{item === "overview" ? "◫" : item === "keys" ? "⌁" : item === "models" ? "◇" : item === "quotas" ? "≋" : item === "costs" ? "¥" : item === "guardrails" ? "◈" : item === "approvals" ? "✓" : item === "notifications" ? "●" : "≡"}</span>
               {viewLabels[item][1]}{item === "approvals" && pending.length > 0 && <b className="badge">{pending.length}</b>}
               {item === "notifications" && unreadNotifications.length > 0 && <b className="badge">{unreadNotifications.length}</b>}
             </button>
@@ -382,6 +400,11 @@ export function AdminConsole() {
             {filteredKeys.map((item) => <tr key={item.keyId}><td><strong>{item.keyId}</strong><small>{item.applicationId}</small></td><td><strong>{item.tenantId}</strong><small>{item.projectId}</small></td><td>{item.allowedModels.map((model) => <span className="model-pill" key={model}>{model}</span>)}</td><td><StatusPill value={item.enabled ? "enabled" : "disabled"} /></td><td><strong>v{item.version}</strong><small>{formatDate(item.updatedAt)}</small></td><td className="right"><div className="action-group">{canWrite && <><button onClick={() => editKey(item)}>编辑模型</button><button className={item.enabled ? "danger" : ""} onClick={() => void toggleKey(item)}>{item.enabled ? "禁用" : "启用"}</button></>}{canApprove && <button onClick={() => void requestRotation(item)}>申请轮换</button>}{!canWrite && !canApprove && <span className="model-pill">只读</span>}</div></td></tr>)}
           </tbody></table></div></div>
         </section>}
+
+        {view === "models" && <GovernancePanel kind="model-deployments" resources={models} csrfToken={csrfToken} canWrite={canWrite} reload={() => loadData()} notify={alert} />}
+        {view === "quotas" && <GovernancePanel kind="quota-policies" resources={quotas} csrfToken={csrfToken} canWrite={canWrite} reload={() => loadData()} notify={alert} />}
+        {view === "costs" && <div className="governance-stack"><GovernancePanel kind="pricing-rules" resources={pricing} csrfToken={csrfToken} canWrite={canWrite} reload={() => loadData()} notify={alert} /><GovernancePanel kind="budgets" resources={budgets} csrfToken={csrfToken} canWrite={canWrite} reload={() => loadData()} notify={alert} /></div>}
+        {view === "guardrails" && <GovernancePanel kind="guardrail-policies" resources={guardrails} csrfToken={csrfToken} canWrite={canWrite} reload={() => loadData()} notify={alert} />}
 
         {view === "approvals" && <section>
           <div className="section-actions"><p>每个批准、拒绝或撤销动作都必须填写理由，并进入审计与通知。</p><div className="filter-actions"><select className="status-filter" aria-label="审批状态" value={approvalStatus} onChange={(event) => setApprovalStatus(event.target.value as typeof approvalStatus)}><option value="pending">待处理</option><option value="approved">已批准</option><option value="rejected">已拒绝</option><option value="cancelled">已撤销</option><option value="expired">已过期</option><option value="all">全部</option></select><button className="quiet-button" onClick={() => void refresh("审批列表已刷新")}>刷新待办</button></div></div>

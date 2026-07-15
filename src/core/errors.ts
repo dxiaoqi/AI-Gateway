@@ -11,6 +11,8 @@ export type GatewayErrorCode =
   | "quota_requests_exceeded"
   | "quota_tokens_exceeded"
   | "quota_concurrency_exceeded"
+  | "budget_exceeded"
+  | "content_policy_violation"
   | "resource_not_found"
   | "resource_conflict"
   | "version_conflict"

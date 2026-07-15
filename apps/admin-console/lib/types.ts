@@ -73,3 +73,9 @@ export interface ListResponse<T> { data: T[] }
 export interface ApiErrorPayload {
   error?: { message?: string; code?: string };
 }
+
+export type GovernanceKind = "model-deployments" | "quota-policies" | "pricing-rules" | "budgets" | "guardrail-policies";
+export interface GovernanceResource {
+  kind: string; id: string; tenantId: string; enabled: boolean; version: number;
+  spec: Record<string, string | number | string[]>; createdAt: string; updatedAt: string;
+}

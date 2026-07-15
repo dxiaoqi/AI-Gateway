@@ -1,6 +1,6 @@
 {
   "name": "enterprise-ai-gateway",
-  "version": "0.13.0",
+  "version": "0.18.0",
   "private": true,
   "workspaces": [
     "apps/admin-console"

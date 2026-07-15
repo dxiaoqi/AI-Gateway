@@ -115,6 +115,47 @@ const migrations: Migration[] = [{
       PRIMARY KEY (notification_id, actor_id)
     )`,
   ],
+}, {
+  version: 5,
+  name: "governance_resources_and_usage",
+  statements: [
+    `CREATE TABLE IF NOT EXISTS governance_resources (
+      kind text NOT NULL CHECK (kind IN ('model-deployment','quota-policy','pricing-rule','budget','guardrail-policy')),
+      resource_id text NOT NULL,
+      tenant_id text NOT NULL,
+      enabled boolean NOT NULL DEFAULT true,
+      version integer NOT NULL DEFAULT 1 CHECK (version > 0),
+      spec jsonb NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY (kind, resource_id)
+    )`,
+    "CREATE INDEX IF NOT EXISTS governance_resources_tenant_kind_idx ON governance_resources(tenant_id,kind,updated_at DESC)",
+    `CREATE TABLE IF NOT EXISTS governance_audit_events (
+      id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+      occurred_at timestamptz NOT NULL DEFAULT now(),
+      actor_id text NOT NULL,
+      action text NOT NULL CHECK (action IN ('created','updated')),
+      kind text NOT NULL,
+      resource_id text NOT NULL,
+      tenant_id text NOT NULL,
+      before_state jsonb,
+      after_state jsonb NOT NULL,
+      request_id text,
+      trace_id text
+    )`,
+    "CREATE INDEX IF NOT EXISTS governance_audit_tenant_idx ON governance_audit_events(tenant_id,occurred_at DESC)",
+    `CREATE TABLE IF NOT EXISTS governance_usage (
+      tenant_id text NOT NULL,
+      period text NOT NULL,
+      currency text NOT NULL CHECK (currency IN ('CNY','USD')),
+      amount numeric(20,8) NOT NULL DEFAULT 0 CHECK (amount >= 0),
+      input_tokens bigint NOT NULL DEFAULT 0 CHECK (input_tokens >= 0),
+      output_tokens bigint NOT NULL DEFAULT 0 CHECK (output_tokens >= 0),
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY (tenant_id,period,currency)
+    )`,
+  ],
 }];
 
 export const latestSchemaVersion = migrations.at(-1)!.version;

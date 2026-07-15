@@ -12,10 +12,16 @@ export class QuotaService {
     private readonly store: QuotaStore,
     private readonly reservationTtlMs: number,
     private readonly clock: () => number = Date.now,
+    private dynamicPolicies?: (context: AuthContext) => Promise<QuotaPolicy[]>,
   ) {}
 
-  matchingPolicies(context: AuthContext): QuotaPolicy[] {
-    return this.policies.filter(
+  setDynamicPolicySource(source: (context: AuthContext) => Promise<QuotaPolicy[]>): void {
+    this.dynamicPolicies = source;
+  }
+
+  matchingPolicies(context: AuthContext, additional: readonly QuotaPolicy[] = []): QuotaPolicy[] {
+    const dynamicIds = new Set(additional.map((policy) => policy.id));
+    return [...this.policies.filter((policy) => !dynamicIds.has(policy.id)), ...additional].filter(
       (policy) => getScopeId(context, policy.scope) === policy.scopeId,
     );
   }
@@ -25,7 +31,7 @@ export class QuotaService {
     reservationId: string,
     reservedTokens: number,
   ): Promise<QuotaReservation | undefined> {
-    const policies = this.matchingPolicies(context);
+    const policies = this.matchingPolicies(context, await this.dynamicPolicies?.(context) ?? []);
     if (policies.length === 0) return undefined;
     return this.store.reserve({
       reservationId,
