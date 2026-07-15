@@ -3,6 +3,7 @@ import "server-only";
 import { timingSafeEqual } from "node:crypto";
 import type { NextRequest } from "next/server";
 import type { AdminSession } from "./session";
+import { resolveRequestOrigin } from "./origin";
 
 function safeEqual(left: string, right: string) {
   const a = Buffer.from(left);
@@ -11,7 +12,7 @@ function safeEqual(left: string, right: string) {
 }
 
 export function expectedOrigin(request: NextRequest) {
-  return process.env.ADMIN_CONSOLE_PUBLIC_ORIGIN ?? request.nextUrl.origin;
+  return resolveRequestOrigin(request, process.env.ADMIN_CONSOLE_PUBLIC_ORIGIN);
 }
 
 export function hasValidOrigin(request: NextRequest) {

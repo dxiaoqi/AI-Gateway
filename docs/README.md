@@ -2,6 +2,8 @@
 
 本目录是 AI Gateway 的可审计工程记录。代码回答“现在如何工作”，迭代记录回答“本轮为什么这样做、验证过什么、还缺什么”，ADR 回答“关键架构选择为什么成立”。
 
+未完成能力、优先级和建议迭代统一维护在 [待实现能力清单](./BACKLOG.md)，不再只依赖各轮文档末尾的零散“已知限制”。
+
 默认读者是传统前端背景的新工程师和需要做决策的领导。文档写法遵循 [面向领导与前端新人的记录规范](./WRITING_AND_REVIEW_GUIDE.md)，不要求预先理解网关或分布式系统。
 
 ## 当前基线
@@ -27,6 +29,7 @@
 | Iteration 17 | 0.17.0 | Completed | Token 定价、用量聚合与月度预算 | [详细记录](./iterations/iteration-17-cost-budget-governance.md) |
 | Iteration 18 | 0.18.0 | Completed (Baseline) | 企业安全护栏与请求前阻断 | [详细记录](./iterations/iteration-18-enterprise-guardrails.md) |
 | Iteration 19 | 0.19.0 | Completed | 主组织 Owner 首次注册与密码登录 | [详细记录](./iterations/iteration-19-local-owner-bootstrap.md) |
+| Iteration 20 | 0.20.0 | Completed | 主组织注册与登录界面可用性修复 | [详细记录](./iterations/iteration-20-local-auth-ui-polish.md) |
 
 ## 如何 Review
 

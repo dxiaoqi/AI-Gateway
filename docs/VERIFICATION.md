@@ -1,6 +1,6 @@
 # 当前版本验证手册
 
-适用版本：`0.19.0`。
+适用版本：`0.20.0`。
 
 验证分为三层。第一层不启动端口、不访问真实模型，适合每次提交前执行；第二层验证真实 HTTP/SSE；第三层显式调用你配置的真实 Provider，会消耗少量 Token。
 
@@ -23,8 +23,8 @@ TypeScript strict typecheck
 当前基线预期：
 
 ```text
-Test Files: 21 passed, 2 integration files skipped
-Tests:      90 passed, 3 integration tests skipped
+Test Files: 22 passed, 2 integration files skipped
+Tests:      94 passed, 3 integration tests skipped
 Gateway build: success
 Next.js build: success
 ```

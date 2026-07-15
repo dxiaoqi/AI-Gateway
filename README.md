@@ -1,6 +1,6 @@
 # Enterprise AI Gateway
 
-一个以可运行迭代方式建设的 Node.js/TypeScript 企业 AI Gateway。目前完成 **Iteration 19**：除模型部署、动态配额、成本预算和 Guardrail 外，在没有企业 OIDC 时也可首次注册唯一主组织 Owner，并使用用户名密码进入管理后台。Iteration 14 外部通知按产品优先级后置。
+一个以可运行迭代方式建设的 Node.js/TypeScript 企业 AI Gateway。目前完成 **Iteration 20**：除模型部署、动态配额、成本预算和 Guardrail 外，在没有企业 OIDC 时也可首次注册唯一主组织 Owner，并通过经过桌面端与窄屏适配的账号密码界面进入管理后台。Iteration 14 外部通知按产品优先级后置。
 
 更完整的能力与实施路线见 [AI_GATEWAY_RESEARCH.md](./AI_GATEWAY_RESEARCH.md)。
 
@@ -290,7 +290,7 @@ npm run smoke:oidc
 - project/application 细粒度管理员范围、专业 DLP/内容安全服务和输出护栏
 - 本地成员邀请、密码找回/MFA、多实例账号仓库与紧急 Token 吊销
 
-这些能力会按照迭代计划逐步加入，避免在核心协议与流式行为稳定前过早引入分布式状态。OpenAI-compatible Adapter 已可连接真实服务，但当前自动化测试完全使用可注入 HTTP Client，不消耗模型额度。
+完整优先级、建议 Iteration 21–27、业务影响和外部团队依赖见 [待实现能力清单](./docs/BACKLOG.md)。这些能力会按照迭代计划逐步加入，避免在核心协议与流式行为稳定前过早引入分布式状态。OpenAI-compatible Adapter 已可连接真实服务，但当前自动化测试完全使用可注入 HTTP Client，不消耗模型额度。
 
 ## 目录
 

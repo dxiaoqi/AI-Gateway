@@ -54,6 +54,7 @@ describe("Next.js administrator console", () => {
 
   it("supports one-time local Owner bootstrap without exposing the access token", async () => {
     const consoleSource = await read("apps/admin-console/components/admin-console.tsx");
+    const consoleStyles = await read("apps/admin-console/app/globals.css");
     const bootstrap = await read("apps/admin-console/app/api/auth/local/bootstrap/route.ts");
     const localAuth = await read("src/admin-auth/local.ts");
     expect(consoleSource).toContain("创建主组织并进入");
@@ -62,5 +63,9 @@ describe("Next.js administrator console", () => {
     expect(localAuth).toContain('open(this.config.accountFile, "wx"');
     expect(localAuth).toContain("scrypt");
     expect(localAuth).not.toContain("console.log");
+    expect(consoleSource).toContain('className="password-field"');
+    expect(consoleSource).toContain('htmlFor="organization-name"');
+    expect(consoleStyles).toContain(".auth-field > input");
+    expect(consoleStyles).toContain(".password-field:focus-within");
   });
 });

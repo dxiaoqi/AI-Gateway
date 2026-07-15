@@ -360,12 +360,35 @@ export function AdminConsole() {
           <h1>把模型访问变成<br /><em>可治理的能力</em></h1>
           <p className="login-copy">使用主组织账号或企业身份提供方登录。Access Token 只保存在 Next.js 服务端，浏览器仅持有 HttpOnly 会话 Cookie。</p>
           {localAuthEnabled && <form className="login-form local-login" onSubmit={submitLocalAuth}>
-            <p>{localBootstrapAvailable ? "首次使用：创建唯一的主组织 Owner。创建完成后公开注册入口会自动关闭。" : "使用主组织账号登录管理后台。"}</p>
-            {localBootstrapAvailable && <label>组织名称<input value={organizationName} onChange={(event) => setOrganizationName(event.target.value)} autoComplete="organization" placeholder="例如：示例科技" minLength={2} maxLength={100} required /></label>}
-            <label>用户名<input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" placeholder="owner 或 owner@example.com" minLength={3} maxLength={100} required /></label>
-            <label>密码 <span>{localBootstrapAvailable ? "至少 12 位，包含字母和数字" : ""}</span><div className="token-field"><input type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={localBootstrapAvailable ? "new-password" : "current-password"} minLength={localBootstrapAvailable ? 12 : 1} maxLength={128} required /><button type="button" className="icon-button" onClick={() => setShowPassword((value) => !value)}>{showPassword ? "隐藏" : "显示"}</button></div></label>
-            {localBootstrapAvailable && <label>确认密码<input type={showPassword ? "text" : "password"} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" minLength={12} maxLength={128} required /></label>}
-            <button className="primary-button wide" disabled={loading} type="submit"><span>{loading ? "正在处理…" : localBootstrapAvailable ? "创建主组织并进入" : "登录管理后台"}</span><b>→</b></button>
+            <div className="local-auth-heading">
+              <span className="auth-step">{localBootstrapAvailable ? "首次设置" : "主组织"}</span>
+              <div>
+                <strong>{localBootstrapAvailable ? "创建主组织管理员" : "登录管理后台"}</strong>
+                <p>{localBootstrapAvailable ? "这是唯一一次开放注册。完成后，该入口会自动关闭。" : "使用主组织 Owner 的账号密码继续。"}</p>
+              </div>
+            </div>
+            <div className="local-fields">
+              {localBootstrapAvailable && <div className="auth-field">
+                <label htmlFor="organization-name">组织名称</label>
+                <input id="organization-name" value={organizationName} onChange={(event) => setOrganizationName(event.target.value)} autoComplete="organization" placeholder="例如：示例科技" minLength={2} maxLength={100} required />
+              </div>}
+              <div className="auth-field">
+                <label htmlFor="local-username">用户名</label>
+                <input id="local-username" value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" placeholder="owner 或 owner@example.com" minLength={3} maxLength={100} required />
+              </div>
+              <div className="auth-field">
+                <div className="field-label"><label htmlFor="local-password">密码</label>{localBootstrapAvailable && <span>至少 12 位，包含字母和数字</span>}</div>
+                <div className="password-field">
+                  <input id="local-password" type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={localBootstrapAvailable ? "new-password" : "current-password"} minLength={localBootstrapAvailable ? 12 : 1} maxLength={128} required />
+                  <button type="button" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? "隐藏密码" : "显示密码"}>{showPassword ? "隐藏" : "显示"}</button>
+                </div>
+              </div>
+              {localBootstrapAvailable && <div className="auth-field">
+                <label htmlFor="confirm-password">确认密码</label>
+                <input id="confirm-password" type={showPassword ? "text" : "password"} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" minLength={12} maxLength={128} required />
+              </div>}
+            </div>
+            <button className="primary-button wide auth-submit" disabled={loading} type="submit"><span>{loading ? "正在处理…" : localBootstrapAvailable ? "创建主组织并进入" : "登录管理后台"}</span><b>→</b></button>
           </form>}
           {oidcEnabled && <a className="primary-button wide sso-button" href="/api/auth/login"><span>使用企业 SSO 登录</span><b>→</b></a>}
           {devLoginEnabled && <form className="login-form dev-login" onSubmit={loginWithDevToken}>
@@ -381,7 +404,7 @@ export function AdminConsole() {
           <div className="security-note"><span>●</span> HttpOnly 会话 · 同源 BFF · CSRF 校验 · 默认拒绝</div>
         </section>
         <aside className="login-aside">
-          <div className="aside-top"><span>AI GATEWAY</span><span>v0.19</span></div>
+          <div className="aside-top"><span>AI GATEWAY</span><span>v0.20</span></div>
           <div className="signal-card"><p>PLATFORM SIGNAL</p><strong>身份 × 范围 × 审批</strong><div className="signal-line"><i /><i /><i /><i /><i /></div></div>
           <p className="aside-quote">“网关不是另一个代理层，<br />而是企业 AI 的策略执行点。”</p>
         </aside>
