@@ -6,6 +6,8 @@
 
 详细设计、每轮实现记录、ADR 与 Review 入口见 [docs/README.md](./docs/README.md)。
 
+整套系统从平台架构到模块、数据、安全、部署和未实现能力的统一说明见 [平台总设计](./docs/PLATFORM_ARCHITECTURE.md)。
+
 ## 环境要求
 
 - Node.js 20.18+
