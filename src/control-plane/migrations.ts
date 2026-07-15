@@ -79,6 +79,42 @@ const migrations: Migration[] = [{
     "CREATE UNIQUE INDEX IF NOT EXISTS rotation_requests_one_pending_per_key_idx ON virtual_key_rotation_requests (key_id) WHERE status = 'pending'",
     "CREATE INDEX IF NOT EXISTS rotation_requests_tenant_status_idx ON virtual_key_rotation_requests (tenant_id, status, requested_at DESC)",
   ],
+}, {
+  version: 4,
+  name: "rotation_decisions_and_admin_notifications",
+  statements: [
+    "ALTER TABLE virtual_key_rotation_requests DROP CONSTRAINT IF EXISTS virtual_key_rotation_requests_status_check",
+    "ALTER TABLE virtual_key_rotation_requests ADD CONSTRAINT virtual_key_rotation_requests_status_check CHECK (status IN ('pending', 'approved', 'rejected', 'cancelled', 'expired'))",
+    "ALTER TABLE virtual_key_rotation_requests ADD COLUMN IF NOT EXISTS decided_by_actor_id text",
+    "ALTER TABLE virtual_key_rotation_requests ADD COLUMN IF NOT EXISTS decided_by_subject text",
+    "ALTER TABLE virtual_key_rotation_requests ADD COLUMN IF NOT EXISTS decision_reason text",
+    "ALTER TABLE virtual_key_rotation_requests ADD COLUMN IF NOT EXISTS decided_at timestamptz",
+    `UPDATE virtual_key_rotation_requests SET
+       decided_by_actor_id = approved_by_actor_id,
+       decided_by_subject = approved_by_subject,
+       decided_at = approved_at,
+       decision_reason = COALESCE(decision_reason, 'Approved before decision reasons became mandatory')
+     WHERE status = 'approved' AND decided_at IS NULL`,
+    `CREATE TABLE IF NOT EXISTS admin_notifications (
+      notification_id uuid PRIMARY KEY,
+      tenant_id text NOT NULL,
+      type text NOT NULL CHECK (type IN ('rotation_requested', 'rotation_approved', 'rotation_rejected', 'rotation_cancelled')),
+      resource_id text NOT NULL,
+      title text NOT NULL,
+      message text NOT NULL,
+      created_by_actor_id text NOT NULL,
+      target_actor_id text,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    "CREATE INDEX IF NOT EXISTS admin_notifications_tenant_created_idx ON admin_notifications (tenant_id, created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS admin_notifications_target_created_idx ON admin_notifications (target_actor_id, created_at DESC) WHERE target_actor_id IS NOT NULL",
+    `CREATE TABLE IF NOT EXISTS admin_notification_reads (
+      notification_id uuid NOT NULL REFERENCES admin_notifications(notification_id) ON DELETE CASCADE,
+      actor_id text NOT NULL,
+      read_at timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY (notification_id, actor_id)
+    )`,
+  ],
 }];
 
 export const latestSchemaVersion = migrations.at(-1)!.version;

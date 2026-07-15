@@ -41,4 +41,14 @@ describe("Next.js administrator console", () => {
     expect(env).toContain("ADMIN_CONSOLE_SESSION_SECRET=");
     expect(env).not.toContain("NEXT_PUBLIC_");
   });
+
+  it("exposes the approval closure and notification inbox through the console", async () => {
+    const consoleSource = await read("apps/admin-console/components/admin-console.tsx");
+    const routes = await read("src/server/routes/admin-virtual-keys.ts");
+    expect(consoleSource).toContain('action: "reject"');
+    expect(consoleSource).toContain('action: "cancel"');
+    expect(consoleSource).toContain('view === "notifications"');
+    expect(routes).toContain("RotationListQuery");
+    expect(routes).toContain('/admin/v1/notifications/:notificationId/read');
+  });
 });

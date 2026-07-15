@@ -20,6 +20,7 @@
 | Iteration 10 | 0.10.0 | Completed | Tenant Scope、默认拒绝与双人 Key 轮换审批 | [详细记录](./iterations/iteration-10-tenant-scope-approval.md) |
 | Iteration 11 | 0.11.0 | Completed | Next.js 管理后台、受限 BFF 与可视化控制面 | [详细记录](./iterations/iteration-11-nextjs-admin-console.md) |
 | Iteration 12 | 0.12.0 | Completed | OIDC Code + PKCE、服务端 Session、CSRF 与退出 | [详细记录](./iterations/iteration-12-admin-oidc-session.md) |
+| Iteration 13 | 0.13.0 | Completed | 审批拒绝/撤销、决策理由、状态筛选与站内通知 | [详细记录](./iterations/iteration-13-approval-closure-notifications.md) |
 
 ## 如何 Review
 
@@ -44,6 +45,7 @@
 - [ADR 0010：租户范围授权与双人 Key 轮换](./adr/0010-tenant-scope-and-two-person-rotation.md)
 - [ADR 0011：独立 Next.js 管理后台与受限 BFF](./adr/0011-nextjs-admin-console-and-bff.md)
 - [ADR 0012：OIDC BFF 与服务端不透明 Session](./adr/0012-oidc-bff-server-session.md)
+- [ADR 0013：事务内租户通知与独立已读回执](./adr/0013-tenant-notification-inbox.md)
 
 ## 值班手册
 

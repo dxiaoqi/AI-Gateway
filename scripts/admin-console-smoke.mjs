@@ -78,6 +78,32 @@ if (!keys.some((item) => item.keyId === keyId && item.enabled === false)) {
   throw new Error("Created virtual key was not visible or disabled through the console BFF");
 }
 
+const rotationCreated = await request(`/api/gateway/admin/v1/virtual-keys/${encodeURIComponent(keyId)}/rotation-requests`, 201, {
+  method: "POST",
+  headers: { ...mutationHeaders, "if-match": "2" },
+});
+const rotationId = (await rotationCreated.json()).rotationRequest?.requestId;
+if (!rotationId) throw new Error("Rotation request was not created");
+await request(`/api/gateway/admin/v1/rotation-requests/${rotationId}/cancel`, 400, {
+  method: "POST",
+  headers: { ...mutationHeaders, "content-type": "application/json" },
+  body: JSON.stringify({ reason: "x" }),
+});
+const cancelled = await request(`/api/gateway/admin/v1/rotation-requests/${rotationId}/cancel`, 200, {
+  method: "POST",
+  headers: { ...mutationHeaders, "content-type": "application/json" },
+  body: JSON.stringify({ reason: "Console smoke deployment postponed" }),
+});
+if ((await cancelled.json()).status !== "cancelled") throw new Error("Requester could not cancel their rotation request");
+const cancelledList = await request("/api/gateway/admin/v1/rotation-requests?status=cancelled", 200, { headers: adminHeaders });
+if (!(await cancelledList.json()).data.some((item) => item.requestId === rotationId)) throw new Error("Rotation status filter did not return the cancelled request");
+const notifications = await request("/api/gateway/admin/v1/notifications?unreadOnly=true", 200, { headers: adminHeaders });
+const notification = (await notifications.json()).data.find((item) => item.resourceId === rotationId);
+if (!notification) throw new Error("Rotation decision did not create an in-app notification");
+await request(`/api/gateway/admin/v1/notifications/${notification.notificationId}/read`, 200, {
+  method: "POST", headers: mutationHeaders,
+});
+
 const audit = await request("/api/gateway/admin/v1/audit-events?limit=100", 200, { headers: adminHeaders });
 if (!(await audit.json()).data.some((event) => event.resourceId === keyId)) {
   throw new Error("Administrator console mutation was not audited");
@@ -88,4 +114,4 @@ await request("/api/auth/logout", 200, { method: "POST", headers: mutationHeader
 await request("/api/auth/session", 401, { headers: { cookie } });
 await request("/api/gateway/admin/v1/me", 401, { headers: { cookie } });
 
-console.log("Admin console smoke passed: login -> HttpOnly session -> restricted BFF -> CSRF -> create -> disable -> audit -> logout");
+console.log("Admin console smoke passed: session -> CSRF -> key -> request/cancel reason -> status filter -> notification/read -> audit -> logout");

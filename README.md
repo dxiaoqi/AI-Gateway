@@ -1,6 +1,6 @@
 # Enterprise AI Gateway
 
-一个以可运行迭代方式建设的 Node.js/TypeScript 企业 AI Gateway。目前完成 **Iteration 12**：管理后台已支持企业 OIDC Authorization Code + PKCE、服务端 Session、CSRF、退出与过期控制，浏览器不再持有 Gateway Access Token。
+一个以可运行迭代方式建设的 Node.js/TypeScript 企业 AI Gateway。目前完成 **Iteration 13**：虚拟 Key 轮换已形成申请、批准、拒绝、撤销和过期的完整状态机，并加入必填决策理由、状态筛选、租户站内通知和个人已读回执。
 
 更完整的能力与实施路线见 [AI_GATEWAY_RESEARCH.md](./AI_GATEWAY_RESEARCH.md)。
 
@@ -258,6 +258,8 @@ npm run smoke:oidc
 - Key、审计和轮换申请列表的 Repository/SQL 层租户过滤
 - 生产默认双人 Key 轮换审批、自批/过期/陈旧版本保护
 - PostgreSQL 行锁和 pending 唯一约束保证并发批准最多一次成功
+- 轮换 reject/cancel、必填决策理由与五态审批状态机
+- 租户级站内通知、定向结果通知和每管理员独立已读回执
 - Next.js App Router + React + TypeScript 独立管理后台
 - 身份总览、Key 创建/搜索/启停/模型权限、轮换审批和审计工作台
 - 只代理 `/admin/v1` 的同源 BFF，Gateway 内部地址保持服务端配置
@@ -277,8 +279,8 @@ npm run smoke:oidc
 - 金额预算、价格表和 Provider 账单对账
 - 跨网关实例共享的路由健康状态与全局自适应负载均衡
 - OpenTelemetry SDK/Collector 导出与分布式 Span
-- 生产通知渠道、正式 SLO 审批和团队级责任人轮值
-- project/application 细粒度管理范围、审批拒绝/撤销/通知和 Guardrail
+- 外部邮件/IM/Webhook 通知投递、正式 SLO 审批和团队级责任人轮值
+- project/application 细粒度管理范围和 Guardrail
 
 这些能力会按照迭代计划逐步加入，避免在核心协议与流式行为稳定前过早引入分布式状态。OpenAI-compatible Adapter 已可连接真实服务，但当前自动化测试完全使用可注入 HTTP Client，不消耗模型额度。
 

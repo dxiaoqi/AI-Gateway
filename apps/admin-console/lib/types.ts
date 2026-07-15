@@ -25,7 +25,7 @@ export interface RotationRequest {
   keyId: string;
   tenantId: string;
   expectedKeyVersion: number;
-  status: "pending" | "approved" | "expired";
+  status: "pending" | "approved" | "rejected" | "cancelled" | "expired";
   requestedByActorId: string;
   requestedBySubject: string;
   requestedByIssuer: string;
@@ -34,6 +34,23 @@ export interface RotationRequest {
   approvedByActorId?: string;
   approvedBySubject?: string;
   approvedAt?: string;
+  decidedByActorId?: string;
+  decidedBySubject?: string;
+  decisionReason?: string;
+  decidedAt?: string;
+}
+
+export interface AdminNotification {
+  notificationId: string;
+  tenantId: string;
+  type: "rotation_requested" | "rotation_approved" | "rotation_rejected" | "rotation_cancelled";
+  resourceId: string;
+  title: string;
+  message: string;
+  createdByActorId: string;
+  targetActorId?: string;
+  createdAt: string;
+  readAt?: string;
 }
 
 export interface AuditEvent {

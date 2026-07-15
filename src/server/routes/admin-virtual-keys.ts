@@ -20,7 +20,22 @@ const UpdateBody = Type.Object({
 
 const KeyParams = Type.Object({ keyId: Type.String({ minLength: 1 }) });
 const RotationParams = Type.Object({ requestId: Type.String({ format: "uuid" }) });
+const NotificationParams = Type.Object({ notificationId: Type.String({ format: "uuid" }) });
 const ListQuery = Type.Object({ limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 200 })) });
+const RotationListQuery = Type.Object({
+  limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 200 })),
+  status: Type.Optional(Type.Union([
+    Type.Literal("pending"), Type.Literal("approved"), Type.Literal("rejected"),
+    Type.Literal("cancelled"), Type.Literal("expired"),
+  ])),
+});
+const NotificationListQuery = Type.Object({
+  limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 200 })),
+  unreadOnly: Type.Optional(Type.Boolean()),
+});
+const DecisionBody = Type.Object({
+  reason: Type.String({ minLength: 3, maxLength: 500 }),
+}, { additionalProperties: false });
 
 const expectedVersion = (request: FastifyRequest): number => {
   const value = request.headers["if-match"];
@@ -154,22 +169,24 @@ export const registerAdminVirtualKeyRoutes = async (
 
   app.get("/admin/v1/rotation-requests", {
     preHandler: requirePermission("audit:read"),
-    schema: { querystring: ListQuery },
+    schema: { querystring: RotationListQuery },
   }, async (request) => {
-    const query = request.query as typeof ListQuery.static;
+    const query = request.query as typeof RotationListQuery.static;
     return {
       data: await options.service.listRotationRequests(
         query.limit ?? 100,
         request.adminIdentity!.tenantScopes,
+        query.status,
       ),
     };
   });
 
   app.post("/admin/v1/rotation-requests/:requestId/approve", {
     preHandler: requirePermission("virtual_keys:rotate"),
-    schema: { params: RotationParams },
+    schema: { params: RotationParams, body: DecisionBody },
   }, async (request, reply) => {
     const params = request.params as typeof RotationParams.static;
+    const body = request.body as typeof DecisionBody.static;
     const rotation = await options.service.findRotationRequestById(params.requestId);
     if (!rotation) {
       throw new GatewayError({
@@ -179,7 +196,50 @@ export const registerAdminVirtualKeyRoutes = async (
       });
     }
     options.authorization.assertTenantAccess(request.adminIdentity!, rotation.tenantId);
-    const result = await options.service.approveRotation(params.requestId, actor(request));
+    const result = await options.service.approveRotation(params.requestId, body.reason, actor(request));
     return reply.header("etag", `\"${result.virtualKey.version}\"`).send(result);
+  });
+
+  const decide = (decision: "reject" | "cancel") => async (request: FastifyRequest) => {
+    const params = request.params as typeof RotationParams.static;
+    const body = request.body as typeof DecisionBody.static;
+    const rotation = await options.service.findRotationRequestById(params.requestId);
+    if (!rotation) {
+      throw new GatewayError({
+        message: `Rotation request '${params.requestId}' was not found`,
+        statusCode: 404,
+        code: "resource_not_found",
+      });
+    }
+    options.authorization.assertTenantAccess(request.adminIdentity!, rotation.tenantId);
+    return decision === "reject"
+      ? options.service.rejectRotation(params.requestId, body.reason, actor(request))
+      : options.service.cancelRotation(params.requestId, body.reason, actor(request));
+  };
+
+  app.post("/admin/v1/rotation-requests/:requestId/reject", {
+    preHandler: requirePermission("virtual_keys:rotate"),
+    schema: { params: RotationParams, body: DecisionBody },
+  }, decide("reject"));
+
+  app.post("/admin/v1/rotation-requests/:requestId/cancel", {
+    preHandler: requirePermission("virtual_keys:rotate"),
+    schema: { params: RotationParams, body: DecisionBody },
+  }, decide("cancel"));
+
+  app.get("/admin/v1/notifications", {
+    preHandler: requirePermission("audit:read"),
+    schema: { querystring: NotificationListQuery },
+  }, async (request) => {
+    const query = request.query as typeof NotificationListQuery.static;
+    return { data: await options.service.listNotifications(query.limit ?? 100, actor(request), query.unreadOnly ?? false) };
+  });
+
+  app.post("/admin/v1/notifications/:notificationId/read", {
+    preHandler: requirePermission("audit:read"),
+    schema: { params: NotificationParams },
+  }, async (request) => {
+    const params = request.params as typeof NotificationParams.static;
+    return options.service.markNotificationRead(params.notificationId, actor(request));
   });
 };

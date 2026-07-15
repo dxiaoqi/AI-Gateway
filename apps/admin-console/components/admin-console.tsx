@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import type {
   AdminIdentity,
+  AdminNotification,
   ApiErrorPayload,
   AuditEvent,
   ListResponse,
@@ -10,7 +11,7 @@ import type {
   VirtualKey,
 } from "@/lib/types";
 
-type View = "overview" | "keys" | "approvals" | "audit";
+type View = "overview" | "keys" | "approvals" | "notifications" | "audit";
 type Notice = { message: string; error: boolean } | null;
 type KeyForm = {
   mode: "create" | "edit";
@@ -35,6 +36,7 @@ const viewLabels: Record<View, [string, string]> = {
   overview: ["OVERVIEW", "运行总览"],
   keys: ["VIRTUAL KEYS", "虚拟 Key"],
   approvals: ["ROTATION APPROVALS", "轮换审批"],
+  notifications: ["NOTIFICATION INBOX", "通知中心"],
   audit: ["AUDIT TRAIL", "审计记录"],
 };
 
@@ -42,6 +44,8 @@ const actionLabels: Record<string, string> = {
   "virtual_key.created": "创建虚拟 Key",
   "virtual_key.updated": "更新虚拟 Key",
   "virtual_key.rotation_requested": "申请轮换",
+  "virtual_key.rotation_rejected": "拒绝轮换",
+  "virtual_key.rotation_cancelled": "撤销轮换",
   "virtual_key.rotated": "批准并完成轮换",
 };
 
@@ -93,6 +97,7 @@ export function AdminConsole() {
   const [identity, setIdentity] = useState<AdminIdentity | null>(null);
   const [keys, setKeys] = useState<VirtualKey[]>([]);
   const [approvals, setApprovals] = useState<RotationRequest[]>([]);
+  const [notifications, setNotifications] = useState<AdminNotification[]>([]);
   const [audit, setAudit] = useState<AuditEvent[]>([]);
   const [view, setView] = useState<View>("overview");
   const [search, setSearch] = useState("");
@@ -100,8 +105,15 @@ export function AdminConsole() {
   const [notice, setNotice] = useState<Notice>(null);
   const [keyForm, setKeyForm] = useState<KeyForm | null>(null);
   const [oneTimeSecret, setOneTimeSecret] = useState<string | null>(null);
+  const [approvalStatus, setApprovalStatus] = useState<RotationRequest["status"] | "all">("pending");
+  const [decision, setDecision] = useState<{ item: RotationRequest; action: "approve" | "reject" | "cancel" } | null>(null);
+  const [decisionReason, setDecisionReason] = useState("");
 
   const pending = useMemo(() => approvals.filter((item) => item.status === "pending"), [approvals]);
+  const unreadNotifications = useMemo(() => notifications.filter((item) => !item.readAt), [notifications]);
+  const filteredApprovals = useMemo(() => approvalStatus === "all"
+    ? approvals
+    : approvals.filter((item) => item.status === approvalStatus), [approvalStatus, approvals]);
   const filteredKeys = useMemo(() => {
     const query = search.trim().toLowerCase();
     if (!query) return keys;
@@ -117,15 +129,17 @@ export function AdminConsole() {
   };
 
   const loadData = async (csrf = csrfToken) => {
-    const [me, keyList, requestList, eventList] = await Promise.all([
+    const [me, keyList, requestList, notificationList, eventList] = await Promise.all([
       gatewayRequest<AdminIdentity>(csrf, "me"),
       gatewayRequest<ListResponse<VirtualKey>>(csrf, "virtual-keys?limit=200"),
       gatewayRequest<ListResponse<RotationRequest>>(csrf, "rotation-requests?limit=200"),
+      gatewayRequest<ListResponse<AdminNotification>>(csrf, "notifications?limit=100"),
       gatewayRequest<ListResponse<AuditEvent>>(csrf, "audit-events?limit=100"),
     ]);
     setIdentity(me);
     setKeys(keyList.data);
     setApprovals(requestList.data);
+    setNotifications(notificationList.data);
     setAudit(eventList.data);
   };
 
@@ -191,6 +205,7 @@ export function AdminConsole() {
       setIdentity(null);
       setKeys([]);
       setApprovals([]);
+      setNotifications([]);
       setAudit([]);
       setView("overview");
       alert("服务端会话已退出");
@@ -222,13 +237,34 @@ export function AdminConsole() {
     }
   };
 
-  const approveRotation = async (item: RotationRequest) => {
+  const submitDecision = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!decision) return;
     try {
-      const result = await gatewayRequest<{ key: string }>(csrfToken, `rotation-requests/${encodeURIComponent(item.requestId)}/approve`, { method: "POST" });
+      const result = await gatewayRequest<{ key?: string }>(csrfToken, `rotation-requests/${encodeURIComponent(decision.item.requestId)}/${decision.action}`, {
+        method: "POST",
+        body: JSON.stringify({ reason: decisionReason.trim() }),
+      });
+      const action = decision.action;
+      setDecision(null);
+      setDecisionReason("");
       await refresh();
-      setOneTimeSecret(result.key);
+      if (action === "approve" && result.key) setOneTimeSecret(result.key);
+      else alert(action === "reject" ? "轮换申请已拒绝" : "轮换申请已撤销");
     } catch (error) {
-      alert(error instanceof Error ? error.message : "批准失败", true);
+      alert(error instanceof Error ? error.message : "审批操作失败", true);
+    }
+  };
+
+  const markNotificationRead = async (item: AdminNotification) => {
+    if (item.readAt) return;
+    try {
+      await gatewayRequest(csrfToken, `notifications/${encodeURIComponent(item.notificationId)}/read`, { method: "POST" });
+      setNotifications((current) => current.map((value) => value.notificationId === item.notificationId
+        ? { ...value, readAt: new Date().toISOString() }
+        : value));
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "标记已读失败", true);
     }
   };
 
@@ -292,7 +328,7 @@ export function AdminConsole() {
           <div className="security-note"><span>●</span> HttpOnly 会话 · 同源 BFF · CSRF 校验 · 默认拒绝</div>
         </section>
         <aside className="login-aside">
-          <div className="aside-top"><span>AI GATEWAY</span><span>v0.12</span></div>
+          <div className="aside-top"><span>AI GATEWAY</span><span>v0.13</span></div>
           <div className="signal-card"><p>PLATFORM SIGNAL</p><strong>身份 × 范围 × 审批</strong><div className="signal-line"><i /><i /><i /><i /><i /></div></div>
           <p className="aside-quote">“网关不是另一个代理层，<br />而是企业 AI 的策略执行点。”</p>
         </aside>
@@ -306,10 +342,11 @@ export function AdminConsole() {
       <aside className="sidebar">
         <div className="sidebar-brand"><BrandMark small /><div><strong>AI Gateway</strong><small>Control plane</small></div></div>
         <nav aria-label="管理后台导航">
-          {(["overview", "keys", "approvals", "audit"] as View[]).map((item) => (
+          {(["overview", "keys", "approvals", "notifications", "audit"] as View[]).map((item) => (
             <button key={item} className={`nav-item${view === item ? " active" : ""}`} onClick={() => setView(item)}>
-              <span>{item === "overview" ? "◫" : item === "keys" ? "⌁" : item === "approvals" ? "✓" : "≡"}</span>
+              <span>{item === "overview" ? "◫" : item === "keys" ? "⌁" : item === "approvals" ? "✓" : item === "notifications" ? "●" : "≡"}</span>
               {viewLabels[item][1]}{item === "approvals" && pending.length > 0 && <b className="badge">{pending.length}</b>}
+              {item === "notifications" && unreadNotifications.length > 0 && <b className="badge">{unreadNotifications.length}</b>}
             </button>
           ))}
         </nav>
@@ -347,11 +384,16 @@ export function AdminConsole() {
         </section>}
 
         {view === "approvals" && <section>
-          <div className="section-actions"><p>批准前核对租户、Key 版本、申请人和变更窗口。申请人不能批准自己的申请。</p><button className="quiet-button" onClick={() => void refresh("审批列表已刷新")}>刷新待办</button></div>
+          <div className="section-actions"><p>每个批准、拒绝或撤销动作都必须填写理由，并进入审计与通知。</p><div className="filter-actions"><select className="status-filter" aria-label="审批状态" value={approvalStatus} onChange={(event) => setApprovalStatus(event.target.value as typeof approvalStatus)}><option value="pending">待处理</option><option value="approved">已批准</option><option value="rejected">已拒绝</option><option value="cancelled">已撤销</option><option value="expired">已过期</option><option value="all">全部</option></select><button className="quiet-button" onClick={() => void refresh("审批列表已刷新")}>刷新待办</button></div></div>
           <div className="table-card"><div className="table-scroll"><table><thead><tr><th>REQUEST</th><th>VIRTUAL KEY</th><th>TENANT</th><th>REQUESTER</th><th>EXPIRES</th><th>STATUS</th><th className="right">ACTION</th></tr></thead><tbody>
-            {approvals.length === 0 && <tr><td className="empty-state" colSpan={7}>当前范围内没有轮换申请。</td></tr>}
-            {approvals.map((item) => <tr key={item.requestId}><td><strong>{short(item.requestId, 12)}</strong><small>{formatDate(item.requestedAt)}</small></td><td><strong>{item.keyId}</strong><small>expected v{item.expectedKeyVersion}</small></td><td><strong>{item.tenantId}</strong></td><td><strong>{short(item.requestedBySubject, 20)}</strong><small>{short(item.requestedByIssuer, 26)}</small></td><td>{formatDate(item.expiresAt)}</td><td><StatusPill value={item.status} /></td><td className="right">{item.status === "pending" && canApprove ? <button className="table-action" onClick={() => void approveRotation(item)}>批准并轮换</button> : "—"}</td></tr>)}
+            {filteredApprovals.length === 0 && <tr><td className="empty-state" colSpan={7}>当前筛选条件下没有轮换申请。</td></tr>}
+            {filteredApprovals.map((item) => <tr key={item.requestId}><td><strong>{short(item.requestId, 12)}</strong><small>{formatDate(item.requestedAt)}</small></td><td><strong>{item.keyId}</strong><small>expected v{item.expectedKeyVersion}</small></td><td><strong>{item.tenantId}</strong></td><td><strong>{short(item.requestedBySubject, 20)}</strong><small>{item.decisionReason ? `理由：${short(item.decisionReason, 28)}` : short(item.requestedByIssuer, 26)}</small></td><td>{formatDate(item.expiresAt)}</td><td><StatusPill value={item.status} /></td><td className="right">{item.status === "pending" && canApprove ? <div className="action-group">{item.requestedByActorId === identity.actorId ? <button className="danger" onClick={() => setDecision({ item, action: "cancel" })}>撤销申请</button> : <><button onClick={() => setDecision({ item, action: "approve" })}>批准并轮换</button><button className="danger" onClick={() => setDecision({ item, action: "reject" })}>拒绝</button></>}</div> : "—"}</td></tr>)}
           </tbody></table></div></div>
+        </section>}
+
+        {view === "notifications" && <section>
+          <div className="section-actions"><p>站内通知按租户范围隔离；“已读”只影响当前管理员，不会替别人清除待办。</p><button className="quiet-button" onClick={() => void refresh("通知已刷新")}>刷新通知</button></div>
+          <div className="notification-list">{notifications.length === 0 ? <div className="empty-state panel-card">当前范围内没有通知。</div> : notifications.map((item) => <article className={`notification-item${item.readAt ? " read" : ""}`} key={item.notificationId}><div className="notification-dot" /><div><strong>{item.title}</strong><p>{item.message}</p><small>{item.tenantId} · {formatDate(item.createdAt)}</small></div><div>{item.readAt ? <span className="model-pill">已读</span> : <button className="quiet-button" onClick={() => void markNotificationRead(item)}>标记已读</button>}</div></article>)}</div>
         </section>}
 
         {view === "audit" && <section>
@@ -367,6 +409,8 @@ export function AdminConsole() {
         <label>允许模型 <span>逗号分隔</span><input required value={keyForm.models} onChange={(event) => setKeyForm({ ...keyForm, models: event.target.value })} placeholder="general, external" /></label>
         <div className="modal-actions"><button type="button" className="quiet-button" onClick={() => setKeyForm(null)}>取消</button><button type="submit" className="primary-button">保存</button></div>
       </form></div>}
+
+      {decision && <div className="modal-backdrop" role="presentation"><form className="modal" onSubmit={submitDecision}><div className="modal-head"><div><p className="eyebrow">ROTATION DECISION</p><h3>{decision.action === "approve" ? "批准并轮换" : decision.action === "reject" ? "拒绝轮换" : "撤销轮换"}</h3></div><button type="button" onClick={() => { setDecision(null); setDecisionReason(""); }}>×</button></div><p className="decision-copy">{decision.item.keyId} · {decision.item.tenantId} · expected v{decision.item.expectedKeyVersion}</p><label>决策理由 <span>3–500 字符，将写入审计</span><textarea required minLength={3} maxLength={500} value={decisionReason} onChange={(event) => setDecisionReason(event.target.value)} placeholder={decision.action === "approve" ? "例如：已核对 CHG-1234 和变更窗口" : decision.action === "reject" ? "例如：缺少回滚方案和业务负责人确认" : "例如：发布窗口已取消，稍后重新申请"} /></label><div className="modal-actions"><button type="button" className="quiet-button" onClick={() => { setDecision(null); setDecisionReason(""); }}>返回</button><button type="submit" className="primary-button">确认{decision.action === "approve" ? "批准" : decision.action === "reject" ? "拒绝" : "撤销"}</button></div></form></div>}
 
       {oneTimeSecret && <div className="modal-backdrop" role="presentation"><section className="modal secret-modal"><div className="modal-head"><div><p className="eyebrow">ONE-TIME SECRET</p><h3>立即保存新 Key</h3></div></div><p>关闭后控制台无法再次找回。请写入调用方 Secret Manager，不要放进聊天、工单或代码仓库。</p><div className="secret-box"><code>{oneTimeSecret}</code><button className="quiet-button" onClick={() => void navigator.clipboard.writeText(oneTimeSecret).then(() => alert("已复制，请立即保存到 Secret Manager")).catch(() => alert("复制失败，请手工选择 Key", true))}>复制</button></div><button className="primary-button wide" onClick={() => setOneTimeSecret(null)}>我已安全保存</button></section></div>}
       {notice && <div className={`toast visible${notice.error ? " error" : ""}`}>{notice.message}</div>}

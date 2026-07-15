@@ -1,14 +1,17 @@
 import type { Pool, PoolClient } from "pg";
+import { randomUUID } from "node:crypto";
 import type { VirtualKeyRecord, VirtualKeySeed } from "../auth/types.js";
 import { hashVirtualKey } from "../auth/service.js";
 import { approvalConflict, notFound, resourceConflict, versionConflict } from "./errors.js";
 import type {
   ApprovedRotation,
+  AdminNotification,
   AuditActor,
   AuditEvent,
   CreateVirtualKeyRecord,
   UpdateVirtualKeyRecord,
   RotationRequestView,
+  RotationRequestStatus,
   VirtualKeyControlPlaneRepository,
   VirtualKeyView,
 } from "./types.js";
@@ -51,7 +54,7 @@ interface RotationRequestRow {
   key_id: string;
   tenant_id: string;
   expected_key_version: number;
-  status: "pending" | "approved" | "expired";
+  status: RotationRequestStatus;
   requested_by_actor_id: string;
   requested_by_subject: string;
   requested_by_issuer: string;
@@ -60,6 +63,23 @@ interface RotationRequestRow {
   approved_by_actor_id: string | null;
   approved_by_subject: string | null;
   approved_at: Date | null;
+  decided_by_actor_id: string | null;
+  decided_by_subject: string | null;
+  decision_reason: string | null;
+  decided_at: Date | null;
+}
+
+interface NotificationRow {
+  notification_id: string;
+  tenant_id: string;
+  type: AdminNotification["type"];
+  resource_id: string;
+  title: string;
+  message: string;
+  created_by_actor_id: string;
+  target_actor_id: string | null;
+  created_at: Date;
+  read_at: Date | null;
 }
 
 const columns = `key_id, key_hash, tenant_id, project_id, application_id,
@@ -82,7 +102,8 @@ const auditState = (view: VirtualKeyView): Record<string, unknown> => ({ ...view
 
 const rotationColumns = `request_id::text, key_id, tenant_id, expected_key_version, status,
   requested_by_actor_id, requested_by_subject, requested_by_issuer, requested_at, expires_at,
-  approved_by_actor_id, approved_by_subject, approved_at`;
+  approved_by_actor_id, approved_by_subject, approved_at, decided_by_actor_id,
+  decided_by_subject, decision_reason, decided_at`;
 
 const toRotationView = (row: RotationRequestRow): RotationRequestView => ({
   requestId: row.request_id,
@@ -98,6 +119,26 @@ const toRotationView = (row: RotationRequestRow): RotationRequestView => ({
   ...(row.approved_by_actor_id ? { approvedByActorId: row.approved_by_actor_id } : {}),
   ...(row.approved_by_subject ? { approvedBySubject: row.approved_by_subject } : {}),
   ...(row.approved_at ? { approvedAt: row.approved_at.toISOString() } : {}),
+  ...(row.decided_by_actor_id ? { decidedByActorId: row.decided_by_actor_id } : {}),
+  ...(row.decided_by_subject ? { decidedBySubject: row.decided_by_subject } : {}),
+  ...(row.decision_reason ? { decisionReason: row.decision_reason } : {}),
+  ...(row.decided_at ? { decidedAt: row.decided_at.toISOString() } : {}),
+});
+
+const notificationColumns = `n.notification_id::text, n.tenant_id, n.type, n.resource_id,
+  n.title, n.message, n.created_by_actor_id, n.target_actor_id, n.created_at, r.read_at`;
+
+const toNotification = (row: NotificationRow): AdminNotification => ({
+  notificationId: row.notification_id,
+  tenantId: row.tenant_id,
+  type: row.type,
+  resourceId: row.resource_id,
+  title: row.title,
+  message: row.message,
+  createdByActorId: row.created_by_actor_id,
+  ...(row.target_actor_id ? { targetActorId: row.target_actor_id } : {}),
+  createdAt: row.created_at.toISOString(),
+  ...(row.read_at ? { readAt: row.read_at.toISOString() } : {}),
 });
 
 const isAllTenants = (tenantScopes: readonly string[] | undefined) =>
@@ -132,6 +173,27 @@ const insertAudit = async (
       actor.authMethod ?? null,
       tenantId,
       actor.tenantScopes ?? null,
+    ],
+  );
+};
+
+const insertNotification = async (
+  client: PoolClient,
+  type: AdminNotification["type"],
+  rotation: RotationRequestView,
+  actor: AuditActor,
+  targetActorId?: string,
+) => {
+  const statusLabels = { rotation_requested: "待审批", rotation_approved: "已批准", rotation_rejected: "已拒绝", rotation_cancelled: "已撤销" };
+  await client.query(
+    `INSERT INTO admin_notifications
+      (notification_id, tenant_id, type, resource_id, title, message, created_by_actor_id, target_actor_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [
+      randomUUID(), rotation.tenantId, type, rotation.requestId,
+      `虚拟 Key ${rotation.keyId} 轮换${statusLabels[type]}`,
+      rotation.decisionReason ?? `申请人：${rotation.requestedBySubject}`,
+      actor.actorId, targetActorId ?? null,
     ],
   );
 };
@@ -342,6 +404,7 @@ export class PostgresVirtualKeyRepository implements VirtualKeyControlPlaneRepos
         undefined,
         { ...rotation },
       );
+      await insertNotification(client, "rotation_requested", rotation, actor);
       return rotation;
     });
   }
@@ -358,21 +421,25 @@ export class PostgresVirtualKeyRepository implements VirtualKeyControlPlaneRepos
     return result.rows[0] ? toRotationView(result.rows[0]) : undefined;
   }
 
-  async listRotationRequests(limit: number, tenantScopes?: readonly string[]): Promise<RotationRequestView[]> {
+  async listRotationRequests(
+    limit: number,
+    tenantScopes?: readonly string[],
+    status?: RotationRequestStatus,
+  ): Promise<RotationRequestView[]> {
     await this.pool.query(
       "UPDATE virtual_key_rotation_requests SET status = 'expired' WHERE status = 'pending' AND expires_at <= now()",
     );
-    const allTenants = isAllTenants(tenantScopes);
     const result = await this.pool.query<RotationRequestRow>(
       `SELECT ${rotationColumns} FROM virtual_key_rotation_requests
-       ${allTenants ? "" : "WHERE tenant_id = ANY($1::text[])"}
-       ORDER BY requested_at DESC LIMIT $${allTenants ? 1 : 2}`,
-      allTenants ? [limit] : [tenantScopes, limit],
+       WHERE ($1::text[] IS NULL OR tenant_id = ANY($1::text[]))
+         AND ($2::text IS NULL OR status = $2)
+       ORDER BY requested_at DESC LIMIT $3`,
+      [isAllTenants(tenantScopes) ? null : tenantScopes, status ?? null, limit],
     );
     return result.rows.map(toRotationView);
   }
 
-  approveRotationRequest(requestId: string, keyHash: string, actor: AuditActor): Promise<ApprovedRotation> {
+  approveRotationRequest(requestId: string, keyHash: string, reason: string, actor: AuditActor): Promise<ApprovedRotation> {
     return inTransaction(this.pool, async (client) => {
       const requestResult = await client.query<RotationRequestRow>(
         `SELECT ${rotationColumns} FROM virtual_key_rotation_requests WHERE request_id = $1 FOR UPDATE`,
@@ -410,15 +477,117 @@ export class PostgresVirtualKeyRepository implements VirtualKeyControlPlaneRepos
       const after = toView(updated.rows[0]!);
       const approved = await client.query<RotationRequestRow>(
         `UPDATE virtual_key_rotation_requests SET status = 'approved',
-           approved_by_actor_id = $2, approved_by_subject = $3, approved_at = now()
+           approved_by_actor_id = $2, approved_by_subject = $3, approved_at = now(),
+           decided_by_actor_id = $2, decided_by_subject = $3,
+           decision_reason = $4, decided_at = now()
          WHERE request_id = $1 RETURNING ${rotationColumns}`,
-        [requestId, actor.actorId, actor.subject ?? actor.actorId],
+        [requestId, actor.actorId, actor.subject ?? actor.actorId, reason],
       );
-      await insertAudit(client, "virtual_key.rotated", key.key_id, key.tenant_id, actor, auditState(before), auditState(after));
-      return { expired: false as const, rotationRequest: toRotationView(approved.rows[0]!), virtualKey: after };
+      const rotation = toRotationView(approved.rows[0]!);
+      await insertAudit(client, "virtual_key.rotated", key.key_id, key.tenant_id, actor, auditState(before), { ...auditState(after), rotationRequest: rotation });
+      await insertNotification(client, "rotation_approved", rotation, actor, rotation.requestedByActorId);
+      return { expired: false as const, rotationRequest: rotation, virtualKey: after };
     }).then((result) => {
       if (result.expired) throw approvalConflict(`Rotation request '${requestId}' has expired`);
       return { rotationRequest: result.rotationRequest, virtualKey: result.virtualKey };
+    });
+  }
+
+  decideRotationRequest(
+    requestId: string,
+    decision: "rejected" | "cancelled",
+    reason: string,
+    actor: AuditActor,
+  ): Promise<RotationRequestView> {
+    return inTransaction(this.pool, async (client) => {
+      const result = await client.query<RotationRequestRow>(
+        `SELECT ${rotationColumns} FROM virtual_key_rotation_requests WHERE request_id = $1 FOR UPDATE`,
+        [requestId],
+      );
+      const request = result.rows[0];
+      if (!request) throw notFound(requestId);
+      if (request.status !== "pending") throw approvalConflict(`Rotation request '${requestId}' is already ${request.status}`);
+      const expired = await client.query(
+        "UPDATE virtual_key_rotation_requests SET status = 'expired' WHERE request_id = $1 AND status = 'pending' AND expires_at <= now() RETURNING request_id",
+        [requestId],
+      );
+      if (expired.rowCount === 1) return { expired: true as const };
+      if (decision === "rejected" && request.requested_by_actor_id === actor.actorId) {
+        throw approvalConflict("The requester must cancel rather than reject their own rotation request");
+      }
+      if (decision === "cancelled" && request.requested_by_actor_id !== actor.actorId) {
+        throw approvalConflict("Only the requester can cancel a rotation request");
+      }
+      const updated = await client.query<RotationRequestRow>(
+        `UPDATE virtual_key_rotation_requests SET status = $2,
+           decided_by_actor_id = $3, decided_by_subject = $4,
+           decision_reason = $5, decided_at = now()
+         WHERE request_id = $1 RETURNING ${rotationColumns}`,
+        [requestId, decision, actor.actorId, actor.subject ?? actor.actorId, reason],
+      );
+      const rotation = toRotationView(updated.rows[0]!);
+      await insertAudit(
+        client,
+        decision === "rejected" ? "virtual_key.rotation_rejected" : "virtual_key.rotation_cancelled",
+        rotation.keyId,
+        rotation.tenantId,
+        actor,
+        undefined,
+        { ...rotation },
+      );
+      await insertNotification(
+        client,
+        decision === "rejected" ? "rotation_rejected" : "rotation_cancelled",
+        rotation,
+        actor,
+        rotation.requestedByActorId,
+      );
+      return { expired: false as const, rotation };
+    }).then((result) => {
+      if (result.expired) throw approvalConflict(`Rotation request '${requestId}' has expired`);
+      return result.rotation;
+    });
+  }
+
+  async listNotifications(
+    limit: number,
+    actorId: string,
+    tenantScopes?: readonly string[],
+    unreadOnly = false,
+  ): Promise<AdminNotification[]> {
+    const result = await this.pool.query<NotificationRow>(
+      `SELECT ${notificationColumns}
+       FROM admin_notifications n
+       LEFT JOIN admin_notification_reads r ON r.notification_id = n.notification_id AND r.actor_id = $2
+       WHERE ($1::text[] IS NULL OR n.tenant_id = ANY($1::text[]))
+         AND (n.target_actor_id IS NULL OR n.target_actor_id = $2)
+         AND ($3::boolean = false OR r.read_at IS NULL)
+       ORDER BY n.created_at DESC LIMIT $4`,
+      [isAllTenants(tenantScopes) ? null : tenantScopes, actorId, unreadOnly, limit],
+    );
+    return result.rows.map(toNotification);
+  }
+
+  markNotificationRead(notificationId: string, actor: AuditActor): Promise<AdminNotification> {
+    return inTransaction(this.pool, async (client) => {
+      const result = await client.query<NotificationRow>(
+        `SELECT ${notificationColumns}
+         FROM admin_notifications n
+         LEFT JOIN admin_notification_reads r ON r.notification_id = n.notification_id AND r.actor_id = $2
+         WHERE n.notification_id = $1
+           AND ($3::text[] IS NULL OR n.tenant_id = ANY($3::text[]))
+           AND (n.target_actor_id IS NULL OR n.target_actor_id = $2)
+         FOR UPDATE OF n`,
+        [notificationId, actor.actorId, isAllTenants(actor.tenantScopes) ? null : actor.tenantScopes],
+      );
+      if (!result.rows[0]) throw notFound(notificationId);
+      await client.query(
+        `INSERT INTO admin_notification_reads (notification_id, actor_id)
+         VALUES ($1, $2) ON CONFLICT (notification_id, actor_id)
+         DO UPDATE SET read_at = EXCLUDED.read_at`,
+        [notificationId, actor.actorId],
+      );
+      return { ...toNotification(result.rows[0]), readAt: new Date().toISOString() };
     });
   }
 }

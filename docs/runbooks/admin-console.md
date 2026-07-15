@@ -1,6 +1,6 @@
 # Next.js 管理后台操作手册
 
-适用版本：0.12.0。面向传统前端背景的新工程师、平台运营和演示人员。
+适用版本：0.13.0。面向传统前端背景的新工程师、平台运营和演示人员。
 
 ## 先理解两个进程
 
@@ -96,8 +96,17 @@ ADMIN_CONSOLE_ALLOW_DEV_TOKEN_LOGIN=false
 ### 轮换审批
 
 - 核对 Key、tenant、expected version、申请人和过期时间。
+- 默认只看待处理，可筛选已批准、已拒绝、已撤销、已过期和全部。
+- 申请人只能“撤销申请”；另一位 admin 才能“批准并轮换”或“拒绝”。
+- 三种动作都必须填写 3–500 字符理由；理由会进入审计和通知。
 - 自批、跨租户、过期、重复和陈旧版本会由 Gateway 拒绝。
-- 静态开发 Token 的 actor 始终相同，不能完成双人审批；完整流程需两个不同 OIDC subject。
+- 静态开发 Token 的 actor 始终相同，只能演示申请和撤销；完整批准/拒绝需两个不同 OIDC subject。
+
+### 通知中心
+
+- 未读角标是当前账号自己的，不会被其他管理员的已读操作清除。
+- 申请创建是租户级待办；批准/拒绝/撤销结果定向原申请人。
+- “标记已读”只表示已经看过，不会修改审批状态。
 
 ### 审计
 
@@ -112,7 +121,7 @@ Gateway 和 Console 已启动时：
 ADMIN_CONSOLE_TOKEN='你的本地管理员Token' npm run smoke:admin
 ```
 
-Console 需使用 `ADMIN_CONSOLE_ALLOW_DEV_TOKEN_LOGIN=true` 启动。脚本验证：安全 Header、无 Session 401、受限路径、登录创建 HttpOnly Session、无 CSRF 写入 403、创建/禁用/审计、跨站退出 403、正常退出和旧 Cookie 401。脚本会在本地测试库创建一个 `console-smoke-*` Key，不得指向生产。
+Console 需使用 `ADMIN_CONSOLE_ALLOW_DEV_TOKEN_LOGIN=true` 启动。脚本验证：Session/CSRF、创建和禁用 Key、创建轮换申请、短理由 400、申请人撤销、状态筛选、通知已读、审计和退出失效。脚本会在本地测试库创建一个 `console-smoke-*` Key，不得指向生产。
 
 验证真实协议形状但不连接企业 IdP：
 

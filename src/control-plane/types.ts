@@ -37,7 +37,9 @@ export interface AuditEvent {
     | "virtual_key.created"
     | "virtual_key.updated"
     | "virtual_key.rotated"
-    | "virtual_key.rotation_requested";
+    | "virtual_key.rotation_requested"
+    | "virtual_key.rotation_rejected"
+    | "virtual_key.rotation_cancelled";
   resourceType: "virtual_key";
   resourceId: string;
   beforeState?: Record<string, unknown>;
@@ -46,7 +48,7 @@ export interface AuditEvent {
   traceId?: string;
 }
 
-export type RotationRequestStatus = "pending" | "approved" | "expired";
+export type RotationRequestStatus = "pending" | "approved" | "rejected" | "cancelled" | "expired";
 
 export interface RotationRequestView {
   requestId: string;
@@ -62,6 +64,29 @@ export interface RotationRequestView {
   approvedByActorId?: string;
   approvedBySubject?: string;
   approvedAt?: string;
+  decidedByActorId?: string;
+  decidedBySubject?: string;
+  decisionReason?: string;
+  decidedAt?: string;
+}
+
+export type AdminNotificationType =
+  | "rotation_requested"
+  | "rotation_approved"
+  | "rotation_rejected"
+  | "rotation_cancelled";
+
+export interface AdminNotification {
+  notificationId: string;
+  tenantId: string;
+  type: AdminNotificationType;
+  resourceId: string;
+  title: string;
+  message: string;
+  createdByActorId: string;
+  targetActorId?: string;
+  createdAt: string;
+  readAt?: string;
 }
 
 export interface ApprovedRotation {
@@ -109,10 +134,31 @@ export interface VirtualKeyControlPlaneRepository {
     actor: AuditActor,
   ): Promise<RotationRequestView>;
   findRotationRequestById(requestId: string): Promise<RotationRequestView | undefined>;
-  listRotationRequests(limit: number, tenantScopes?: readonly string[]): Promise<RotationRequestView[]>;
+  listRotationRequests(
+    limit: number,
+    tenantScopes?: readonly string[],
+    status?: RotationRequestStatus,
+  ): Promise<RotationRequestView[]>;
   approveRotationRequest(
     requestId: string,
     keyHash: string,
+    reason: string,
     actor: AuditActor,
   ): Promise<ApprovedRotation>;
+  decideRotationRequest(
+    requestId: string,
+    decision: "rejected" | "cancelled",
+    reason: string,
+    actor: AuditActor,
+  ): Promise<RotationRequestView>;
+  listNotifications(
+    limit: number,
+    actorId: string,
+    tenantScopes?: readonly string[],
+    unreadOnly?: boolean,
+  ): Promise<AdminNotification[]>;
+  markNotificationRead(
+    notificationId: string,
+    actor: AuditActor,
+  ): Promise<AdminNotification>;
 }

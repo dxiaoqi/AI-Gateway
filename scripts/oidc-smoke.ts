@@ -105,10 +105,10 @@ try {
   }), 201, "admin requests rotation");
   const requested = await requestedResponse.json() as { rotationRequest: { requestId: string } };
   await expectStatus(await request(`/admin/v1/rotation-requests/${requested.rotationRequest.requestId}/approve`, tokens.adminRequester, {
-    method: "POST",
+    method: "POST", body: JSON.stringify({ reason: "Self approval must fail" }),
   }), 409, "requester cannot self-approve");
   await expectStatus(await request(`/admin/v1/rotation-requests/${requested.rotationRequest.requestId}/approve`, tokens.adminApprover, {
-    method: "POST",
+    method: "POST", body: JSON.stringify({ reason: "Change window verified" }),
   }), 200, "second admin approves rotation");
   const auditResponse = await expectStatus(await request("/admin/v1/audit-events", tokens.viewer), 200, "viewer audit read");
   const audit = await auditResponse.json() as { data: Array<Record<string, unknown>> };

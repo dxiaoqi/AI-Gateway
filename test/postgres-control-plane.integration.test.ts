@@ -31,7 +31,7 @@ suite("PostgreSQL virtual-key control plane", () => {
   beforeAll(async () => {
     await runMigrations(pool);
     await runMigrations(pool);
-    await pool.query("TRUNCATE virtual_key_rotation_requests, audit_events, virtual_keys RESTART IDENTITY");
+    await pool.query("TRUNCATE admin_notification_reads, admin_notifications, virtual_key_rotation_requests, audit_events, virtual_keys RESTART IDENTITY");
   });
 
   afterAll(async () => pool.end());
@@ -60,16 +60,34 @@ suite("PostgreSQL virtual-key control plane", () => {
     expect((await auth.authenticate("Bearer aigw_postgres_2")).keyId).toBe("postgres-key");
 
     const requested = await service.requestRotation("postgres-key", 4, actor);
-    await expect(service.approveRotation(requested.requestId, actor)).rejects.toMatchObject({ code: "approval_conflict" });
-    const approved = await service.approveRotation(requested.requestId, approver);
+    await expect(service.approveRotation(requested.requestId, "self approval", actor)).rejects.toMatchObject({ code: "approval_conflict" });
+    const approved = await service.approveRotation(requested.requestId, "Verified change window", approver);
     expect(approved).toMatchObject({
       key: "aigw_postgres_4",
       virtualKey: { version: 5 },
-      rotationRequest: { status: "approved", requestedBySubject: "test-user", approvedBySubject: "approver" },
+      rotationRequest: { status: "approved", requestedBySubject: "test-user", approvedBySubject: "approver", decisionReason: "Verified change window" },
     });
-    await expect(service.approveRotation(requested.requestId, approver)).rejects.toMatchObject({ code: "approval_conflict" });
+    await expect(service.approveRotation(requested.requestId, "repeat", approver)).rejects.toMatchObject({ code: "approval_conflict" });
     expect(await service.list(10, ["other-tenant"])).toEqual([]);
     expect(await service.listAuditEvents(10, ["other-tenant"])).toEqual([]);
+
+    const rejectedRequest = await service.requestRotation("postgres-key", 5, actor);
+    await expect(service.rejectRotation(rejectedRequest.requestId, "not allowed", actor)).rejects.toMatchObject({ code: "approval_conflict" });
+    const rejected = await service.rejectRotation(rejectedRequest.requestId, "Change ticket is incomplete", approver);
+    expect(rejected).toMatchObject({ status: "rejected", decisionReason: "Change ticket is incomplete", decidedBySubject: "approver" });
+
+    const cancelledRequest = await service.requestRotation("postgres-key", 5, actor);
+    await expect(service.cancelRotation(cancelledRequest.requestId, "wrong actor", approver)).rejects.toMatchObject({ code: "approval_conflict" });
+    const cancelled = await service.cancelRotation(cancelledRequest.requestId, "Deployment was postponed", actor);
+    expect(cancelled).toMatchObject({ status: "cancelled", decisionReason: "Deployment was postponed" });
+
+    const unread = await service.listNotifications(20, actor, true);
+    expect(unread.some((item) => item.type === "rotation_rejected")).toBe(true);
+    const broadcast = unread.find((item) => item.type === "rotation_requested")!;
+    const read = await service.markNotificationRead(broadcast.notificationId, actor);
+    expect(read.readAt).toBeTruthy();
+    expect((await service.listNotifications(20, actor, true)).some((item) => item.notificationId === broadcast.notificationId)).toBe(false);
+    expect((await service.listNotifications(20, approver, true)).some((item) => item.notificationId === broadcast.notificationId)).toBe(true);
 
     const expiringService = new VirtualKeyControlPlaneService(
       repository,
@@ -79,13 +97,13 @@ suite("PostgreSQL virtual-key control plane", () => {
     );
     const expiring = await expiringService.requestRotation("postgres-key", 5, actor);
     await new Promise((resolve) => setTimeout(resolve, 20));
-    await expect(expiringService.approveRotation(expiring.requestId, approver)).rejects.toMatchObject({ code: "approval_conflict" });
+    await expect(expiringService.approveRotation(expiring.requestId, "expired request", approver)).rejects.toMatchObject({ code: "approval_conflict" });
     expect((await service.findRotationRequestById(expiring.requestId))?.status).toBe("expired");
 
     const concurrent = await service.requestRotation("postgres-key", 5, actor);
     const approvals = await Promise.allSettled([
-      repository.approveRotationRequest(concurrent.requestId, hashVirtualKey("aigw_concurrent_one", pepper), approver),
-      repository.approveRotationRequest(concurrent.requestId, hashVirtualKey("aigw_concurrent_two", pepper), secondApprover),
+      repository.approveRotationRequest(concurrent.requestId, hashVirtualKey("aigw_concurrent_one", pepper), "first concurrent approval", approver),
+      repository.approveRotationRequest(concurrent.requestId, hashVirtualKey("aigw_concurrent_two", pepper), "second concurrent approval", secondApprover),
     ]);
     expect(approvals.filter((result) => result.status === "fulfilled")).toHaveLength(1);
     expect(approvals.filter((result) => result.status === "rejected")).toHaveLength(1);
@@ -101,6 +119,6 @@ suite("PostgreSQL virtual-key control plane", () => {
       authMethod: "oidc",
     });
     const count = await pool.query<{ count: string }>("SELECT count(*) FROM gateway_schema_migrations");
-    expect(count.rows[0]?.count).toBe("3");
+    expect(count.rows[0]?.count).toBe("4");
   });
 });
