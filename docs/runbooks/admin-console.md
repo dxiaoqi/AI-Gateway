@@ -1,6 +1,6 @@
 # Next.js 管理后台操作手册
 
-适用版本：0.11.0。面向传统前端背景的新工程师、平台运营和演示人员。
+适用版本：0.12.0。面向传统前端背景的新工程师、平台运营和演示人员。
 
 ## 先理解两个进程
 
@@ -36,10 +36,47 @@ npm run dev
 终端 C，启动 Console：
 
 ```bash
-GATEWAY_API_BASE_URL='http://127.0.0.1:3000' npm run admin:dev
+GATEWAY_API_BASE_URL='http://127.0.0.1:3000' \
+ADMIN_CONSOLE_PUBLIC_ORIGIN='http://127.0.0.1:3100' \
+ADMIN_CONSOLE_SESSION_SECRET='请替换为至少32字符的本地随机值' \
+ADMIN_CONSOLE_ALLOW_DEV_TOKEN_LOGIN=true \
+npm run admin:dev
 ```
 
-打开 `http://127.0.0.1:3100`，粘贴终端 B 使用的管理员 Token。该 Token 只在当前页面内存；刷新页面必须重新输入。
+打开 `http://127.0.0.1:3100`，在“仅本地开发”区域粘贴终端 B 使用的管理员 Token。Next 验证后把 Token 放进服务端 Session，浏览器只获得 HttpOnly Cookie；刷新页面可以恢复登录。`ADMIN_CONSOLE_ALLOW_DEV_TOKEN_LOGIN` 在 production 即使误设为 true 也会被代码拒绝。
+
+## 接企业 OIDC
+
+Console 和 Gateway 是同一个登录链路的两个客户端：Console 负责让员工登录并取得 Access Token；Gateway 负责验证 Access Token 及角色/租户 Claim。两边的 issuer 必须一致，Console 的 client ID 用于 ID Token audience，Gateway audience 取决于 IdP 发出的 API Access Token。
+
+Console 生产配置示例：
+
+```dotenv
+GATEWAY_API_BASE_URL=https://ai-gateway.internal.example
+ADMIN_CONSOLE_PUBLIC_ORIGIN=https://ai-admin.example.com
+ADMIN_CONSOLE_SESSION_SECRET=使用Secret-Manager注入至少32字符强随机值
+ADMIN_CONSOLE_SESSION_TTL_SECONDS=900
+ADMIN_CONSOLE_REDIS_URL=rediss://user:password@redis.internal.example:6380
+
+ADMIN_CONSOLE_OIDC_ISSUER=https://identity.example.com/tenant
+ADMIN_CONSOLE_OIDC_CLIENT_ID=ai-gateway-admin-console
+ADMIN_CONSOLE_OIDC_CLIENT_SECRET=使用Secret-Manager注入
+ADMIN_CONSOLE_OIDC_REDIRECT_URI=https://ai-admin.example.com/api/auth/callback
+ADMIN_CONSOLE_OIDC_SCOPES=openid profile ai-gateway.admin
+ADMIN_CONSOLE_ALLOW_DEV_TOKEN_LOGIN=false
+```
+
+在 IdP 注册的 Redirect URI 必须与上面逐字符一致。不要使用通配符 Redirect URI。多实例或会滚动发布的环境必须配 Redis，否则进程重启或请求落到另一实例会丢 Session。
+
+### 登录失败如何定位
+
+| 页面错误码 | 新人先检查什么 |
+|---|---|
+| `oidc_unavailable` | issuer 是否可达、Discovery 是否完整、生产是否 HTTPS |
+| `invalid_callback` | IdP Redirect URI、Cookie 域名、反向代理是否改写路径、回调是否被重复使用 |
+| `token_exchange_failed` | client secret、PKCE 支持、ID Token issuer/audience/nonce、JWKS 网络 |
+| API 401 | Session 或 Access Token 已过期；重新登录，检查双方时钟 |
+| API 403 `csrf_error` | `ADMIN_CONSOLE_PUBLIC_ORIGIN` 与浏览器地址是否完全一致，代理是否保留 Origin |
 
 ## 页面说明
 
@@ -75,15 +112,26 @@ Gateway 和 Console 已启动时：
 ADMIN_CONSOLE_TOKEN='你的本地管理员Token' npm run smoke:admin
 ```
 
-脚本验证：Next 页面、安全 Header、无 Token 401、非 admin 路径 404、BFF 身份、创建、禁用和审计。脚本会在本地测试库创建一个 `console-smoke-*` Key，不得指向生产。
+Console 需使用 `ADMIN_CONSOLE_ALLOW_DEV_TOKEN_LOGIN=true` 启动。脚本验证：安全 Header、无 Session 401、受限路径、登录创建 HttpOnly Session、无 CSRF 写入 403、创建/禁用/审计、跨站退出 403、正常退出和旧 Cookie 401。脚本会在本地测试库创建一个 `console-smoke-*` Key，不得指向生产。
 
-## 生产前必须补齐
+验证真实协议形状但不连接企业 IdP：
 
-- 企业 OIDC Redirect/Callback + Authorization Code PKCE，而不是人工粘贴 Token。
-- HttpOnly/Secure/SameSite Session、CSRF 和退出撤销策略。
+```bash
+ADMIN_CONSOLE_TOKEN='你的本地管理员Token' npm run smoke:admin-oidc
+```
+
+该脚本会自行启动临时 Mock OIDC 和 Next 进程，检查 Discovery、state、nonce、PKCE S256、code exchange、ID Token/JWKS、Session 和 BFF。执行前只需保持本地 Gateway 在 3000 运行，不要同时占用 3100。
+
+## 上线检查
+
+- 企业 IdP Redirect URI、client secret 和 Gateway audience 已由身份团队确认。
+- Redis 使用 TLS、鉴权、专用 ACL；故障时告警，不降级到内存。
+- `ADMIN_CONSOLE_PUBLIC_ORIGIN` 是唯一正式 HTTPS 地址，反向代理保留 Origin。
+- `ADMIN_CONSOLE_ALLOW_DEV_TOKEN_LOGIN=false`，并验证 `/api/auth/dev-token` 返回 404。
 - Console 与 Gateway 之间的 TLS、网络策略和服务身份。
 - Next.js 依赖公告跟踪、镜像扫描和固定版本升级流程。
 - Console 独立域名、CSP nonce、WAF/反向代理和访问日志脱敏。
+- 明确 15 分钟会话到期是否满足公司策略；当前没有 Refresh Token 和 IdP Single Logout。
 
 ## 停止
 

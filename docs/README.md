@@ -19,6 +19,7 @@
 | Iteration 9 | 0.9.0 | Completed | 管理员 OIDC/JWT 身份、RBAC 与个人审计 | [详细记录](./iterations/iteration-09-admin-oidc-rbac.md) |
 | Iteration 10 | 0.10.0 | Completed | Tenant Scope、默认拒绝与双人 Key 轮换审批 | [详细记录](./iterations/iteration-10-tenant-scope-approval.md) |
 | Iteration 11 | 0.11.0 | Completed | Next.js 管理后台、受限 BFF 与可视化控制面 | [详细记录](./iterations/iteration-11-nextjs-admin-console.md) |
+| Iteration 12 | 0.12.0 | Completed | OIDC Code + PKCE、服务端 Session、CSRF 与退出 | [详细记录](./iterations/iteration-12-admin-oidc-session.md) |
 
 ## 如何 Review
 
@@ -42,6 +43,7 @@
 - [ADR 0009：管理 API 使用 OIDC JWT 身份与路由级 RBAC](./adr/0009-oidc-admin-identity-and-rbac.md)
 - [ADR 0010：租户范围授权与双人 Key 轮换](./adr/0010-tenant-scope-and-two-person-rotation.md)
 - [ADR 0011：独立 Next.js 管理后台与受限 BFF](./adr/0011-nextjs-admin-console-and-bff.md)
+- [ADR 0012：OIDC BFF 与服务端不透明 Session](./adr/0012-oidc-bff-server-session.md)
 
 ## 值班手册
 

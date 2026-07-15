@@ -6,5 +6,6 @@ apps/admin-console/.env.local
 coverage/
 .env
 *.log
+*.tsbuildinfo
 .DS_Store
 observability/secrets/metrics-token

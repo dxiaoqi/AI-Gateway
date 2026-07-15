@@ -1,6 +1,6 @@
 # Enterprise AI Gateway
 
-一个以可运行迭代方式建设的 Node.js/TypeScript 企业 AI Gateway。目前完成 **Iteration 11**：在 OIDC/JWT、租户范围授权和双人轮换之上，新增独立 Next.js 管理后台，用可视工作台管理虚拟 Key、审批和审计。
+一个以可运行迭代方式建设的 Node.js/TypeScript 企业 AI Gateway。目前完成 **Iteration 12**：管理后台已支持企业 OIDC Authorization Code + PKCE、服务端 Session、CSRF、退出与过期控制，浏览器不再持有 Gateway Access Token。
 
 更完整的能力与实施路线见 [AI_GATEWAY_RESEARCH.md](./AI_GATEWAY_RESEARCH.md)。
 
@@ -134,10 +134,14 @@ ROTATION_APPROVAL_TTL_MS=900000
 管理后台是独立 workspace，默认监听 `http://127.0.0.1:3100`。先按上文启动 PostgreSQL 和带管理员认证的 Gateway，再在另一个终端执行：
 
 ```bash
-GATEWAY_API_BASE_URL='http://127.0.0.1:3000' npm run admin:dev
+GATEWAY_API_BASE_URL='http://127.0.0.1:3000' \
+ADMIN_CONSOLE_PUBLIC_ORIGIN='http://127.0.0.1:3100' \
+ADMIN_CONSOLE_SESSION_SECRET='replace-with-at-least-32-random-characters' \
+ADMIN_CONSOLE_ALLOW_DEV_TOKEN_LOGIN=true \
+npm run admin:dev
 ```
 
-打开 `http://127.0.0.1:3100`，粘贴 OIDC Access Token 或本地静态管理员 Token。Token 只保存在 React 页面内存，不写 localStorage/sessionStorage。完整步骤和角色说明见 [管理后台操作手册](./docs/runbooks/admin-console.md)。
+打开 `http://127.0.0.1:3100`，本地兼容入口会把静态管理员 Token 换成服务端 Session；浏览器只保留 HttpOnly Cookie。生产配置 OIDC 和 Redis，并关闭开发入口。完整配置、协议说明和排障见 [管理后台操作手册](./docs/runbooks/admin-console.md)。
 
 健康检查：
 
@@ -257,7 +261,9 @@ npm run smoke:oidc
 - Next.js App Router + React + TypeScript 独立管理后台
 - 身份总览、Key 创建/搜索/启停/模型权限、轮换审批和审计工作台
 - 只代理 `/admin/v1` 的同源 BFF，Gateway 内部地址保持服务端配置
-- 管理 Token 仅保存在 React 内存，一次性 Key 专用提示与关闭清除
+- OIDC Authorization Code + PKCE、state、nonce 与 JWKS ID Token 验证
+- Redis/内存服务端 Session、HttpOnly Cookie、CSRF、退出与过期控制
+- 浏览器不持有 Gateway Access Token；一次性 Key 专用提示与关闭清除
 - 上游超时与统一错误格式
 - JSON Schema 请求校验
 - 健康检查和优雅退出
@@ -272,7 +278,7 @@ npm run smoke:oidc
 - 跨网关实例共享的路由健康状态与全局自适应负载均衡
 - OpenTelemetry SDK/Collector 导出与分布式 Span
 - 生产通知渠道、正式 SLO 审批和团队级责任人轮值
-- project/application 细粒度管理范围、OIDC Redirect/PKCE、审批拒绝/撤销/通知和 Guardrail
+- project/application 细粒度管理范围、审批拒绝/撤销/通知和 Guardrail
 
 这些能力会按照迭代计划逐步加入，避免在核心协议与流式行为稳定前过早引入分布式状态。OpenAI-compatible Adapter 已可连接真实服务，但当前自动化测试完全使用可注入 HTTP Client，不消耗模型额度。
 

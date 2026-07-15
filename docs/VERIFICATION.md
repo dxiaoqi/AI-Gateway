@@ -1,6 +1,6 @@
 # 当前版本验证手册
 
-适用版本：`0.11.0`。
+适用版本：`0.12.0`。
 
 验证分为三层。第一层不启动端口、不访问真实模型，适合每次提交前执行；第二层验证真实 HTTP/SSE；第三层显式调用你配置的真实 Provider，会消耗少量 Token。
 
@@ -341,20 +341,34 @@ ADMIN_CONSOLE_TOKEN='你的本地管理员Token' npm run smoke:admin
 预期：
 
 ```text
-Admin console smoke passed: Next shell -> restricted BFF -> identity -> create -> disable -> audit
+Admin console smoke passed: login -> HttpOnly session -> restricted BFF -> CSRF -> create -> disable -> audit -> logout
 ```
 
 脚本实际经过两个端口和真实 PostgreSQL：
 
 1. GET Next 页面，确认标题和防 iframe Header。
-2. 不带 Token 调 BFF 得到 401。
+2. 不带 Session 调 BFF 得到 401。
 3. 尝试代理非 `/admin/v1` 路径得到 404。
-4. Token 经 BFF 获取 `/admin/v1/me`，角色和租户范围保持不变。
-5. 经 BFF 创建并禁用 Key，验证 `If-Match` 透传。
-6. 再查 Key 与审计，确认状态和审计已经落库。
+4. 本地登录把 Token 换成 HttpOnly 服务端 Session。
+5. 无 CSRF 的写请求得到 403；正确 Origin + CSRF 可写入。
+6. 经 BFF 创建并禁用 Key，验证 `If-Match` 透传。
+7. 再查 Key 与审计，确认状态和审计已经落库。
+8. 跨站退出得到 403；正常退出后旧 Cookie 调 Session/BFF 均为 401。
 
 该脚本会创建 `console-smoke-*` 测试 Key，只能用于本地测试数据库。它不会调用模型或打印 Token/新 Key。
 
-手工浏览器检查：打开 `http://127.0.0.1:3100`，登录后确认总览、Key 表、审批和审计可切换；刷新后应回到登录页，证明 Token 没有持久化。
+完整 OIDC 协议本地验证（保持 Gateway 运行，不要占用 3100）：
+
+```bash
+ADMIN_CONSOLE_TOKEN='你的本地管理员Token' npm run smoke:admin-oidc
+```
+
+预期包含：
+
+```text
+Admin OIDC flow smoke passed: discovery -> state/nonce -> PKCE S256 -> code exchange -> ID token -> server session -> BFF
+```
+
+手工浏览器检查：打开 `http://127.0.0.1:3100`，登录后确认总览、Key 表、审批和审计可切换；刷新后应保持登录，退出后刷新应回到登录页。
 
 当前 `npm audit` 有 2 个 moderate，均来自 Next.js 16.2.10 固定的 PostCSS 8.4.31 和同一公告。项目不处理用户 CSS，当前利用路径不可达；禁止执行会降级到 Next 9 的 `npm audit fix --force`，详见 [Iteration 11 依赖审计例外](./iterations/iteration-11-nextjs-admin-console.md#10-依赖审计例外)。

@@ -1,5 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
+import { hasValidCsrf } from "@/lib/security";
+import { readSession, SESSION_COOKIE } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -16,14 +18,15 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
     return NextResponse.json({ error: { message: "Unsupported gateway path", code: "proxy_path_denied" } }, { status: 404 });
   }
 
-  const authorization = request.headers.get("authorization");
-  if (!authorization?.startsWith("Bearer ")) {
-    return NextResponse.json({ error: { message: "Administrator credential is required", code: "authentication_error" } }, { status: 401 });
+  const session = await readSession(request.cookies.get(SESSION_COOKIE)?.value);
+  if (!session) return NextResponse.json({ error: { message: "Administrator session is required", code: "authentication_error" } }, { status: 401 });
+  if (request.method !== "GET" && request.method !== "HEAD" && !hasValidCsrf(request, session)) {
+    return NextResponse.json({ error: { message: "CSRF validation failed", code: "csrf_error" } }, { status: 403 });
   }
 
   const target = new URL("/" + joinedPath, gatewayBaseUrl());
   request.nextUrl.searchParams.forEach((value, key) => target.searchParams.append(key, value));
-  const headers = new Headers({ authorization });
+  const headers = new Headers({ authorization: `Bearer ${session.accessToken}` });
   const ifMatch = request.headers.get("if-match");
   if (ifMatch) headers.set("if-match", ifMatch);
   const contentType = request.headers.get("content-type");

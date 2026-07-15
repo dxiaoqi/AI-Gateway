@@ -12,7 +12,7 @@ const request = async (path, expected, options = {}) => {
 
 const page = await request("/", 200);
 const html = await page.text();
-if (!html.includes("AI Gateway Control") || !html.includes("可治理的能力")) {
+if (!html.includes("AI Gateway Control") || !html.includes("恢复安全会话")) {
   throw new Error("Next.js administrator console shell is incomplete");
 }
 if (page.headers.get("x-frame-options") !== "DENY") {
@@ -24,7 +24,20 @@ await request("/api/gateway/v1/models", 404, {
   headers: { authorization: `Bearer ${token}` },
 });
 
-const adminHeaders = { authorization: `Bearer ${token}` };
+const login = await request("/api/auth/dev-token", 200, {
+  method: "POST",
+  headers: { "content-type": "application/json", origin: baseUrl },
+  body: JSON.stringify({ token }),
+});
+const cookie = login.headers.get("set-cookie")?.split(";", 1)[0];
+const loginBody = await login.json();
+const csrfToken = loginBody.csrfToken;
+if (!cookie?.startsWith("aigw_admin_session=") || !csrfToken) {
+  throw new Error("Development login did not create an opaque server session");
+}
+
+const adminHeaders = { cookie };
+const mutationHeaders = { cookie, origin: baseUrl, "x-csrf-token": csrfToken };
 const me = await request("/api/gateway/admin/v1/me", 200, { headers: adminHeaders });
 const identity = await me.json();
 if (!identity.roles?.includes("admin") || !identity.tenantScopes?.includes("*")) {
@@ -32,9 +45,14 @@ if (!identity.roles?.includes("admin") || !identity.tenantScopes?.includes("*"))
 }
 
 const keyId = `console-smoke-${Date.now()}`;
-const created = await request("/api/gateway/admin/v1/virtual-keys", 201, {
+await request("/api/gateway/admin/v1/virtual-keys", 403, {
   method: "POST",
   headers: { ...adminHeaders, "content-type": "application/json" },
+  body: JSON.stringify({ keyId: "must-not-exist" }),
+});
+const created = await request("/api/gateway/admin/v1/virtual-keys", 201, {
+  method: "POST",
+  headers: { ...mutationHeaders, "content-type": "application/json" },
   body: JSON.stringify({
     keyId,
     tenantId: "console-smoke-tenant",
@@ -50,7 +68,7 @@ if (!createdBody.key || createdBody.virtualKey?.version !== 1) {
 
 await request(`/api/gateway/admin/v1/virtual-keys/${encodeURIComponent(keyId)}`, 200, {
   method: "PATCH",
-  headers: { ...adminHeaders, "content-type": "application/json", "if-match": "1" },
+  headers: { ...mutationHeaders, "content-type": "application/json", "if-match": "1" },
   body: JSON.stringify({ enabled: false }),
 });
 
@@ -65,4 +83,9 @@ if (!(await audit.json()).data.some((event) => event.resourceId === keyId)) {
   throw new Error("Administrator console mutation was not audited");
 }
 
-console.log("Admin console smoke passed: Next shell -> restricted BFF -> identity -> create -> disable -> audit");
+await request("/api/auth/logout", 403, { method: "POST", headers: { cookie, origin: "http://attacker.invalid", "x-csrf-token": csrfToken } });
+await request("/api/auth/logout", 200, { method: "POST", headers: mutationHeaders });
+await request("/api/auth/session", 401, { headers: { cookie } });
+await request("/api/gateway/admin/v1/me", 401, { headers: { cookie } });
+
+console.log("Admin console smoke passed: login -> HttpOnly session -> restricted BFF -> CSRF -> create -> disable -> audit -> logout");

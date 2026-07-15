@@ -1,6 +1,6 @@
 {
   "name": "enterprise-ai-gateway",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "private": true,
   "workspaces": [
     "apps/admin-console"
@@ -19,6 +19,7 @@
     "admin:build": "npm run build --workspace @aigateway/admin-console",
     "admin:start": "npm run start --workspace @aigateway/admin-console",
     "smoke:admin": "node scripts/admin-console-smoke.mjs",
+    "smoke:admin-oidc": "node scripts/admin-oidc-flow-smoke.mjs",
     "smoke": "node scripts/smoke.mjs",
     "observability:up": "docker compose --profile observability up -d prometheus alertmanager grafana",
     "observability:down": "docker compose --profile observability rm -f -s grafana prometheus alertmanager",

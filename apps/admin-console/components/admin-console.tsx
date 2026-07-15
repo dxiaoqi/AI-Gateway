@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import type {
   AdminIdentity,
   ApiErrorPayload,
@@ -45,18 +45,19 @@ const actionLabels: Record<string, string> = {
   "virtual_key.rotated": "批准并完成轮换",
 };
 
-async function gatewayRequest<T>(token: string, path: string, init: RequestInit = {}): Promise<T> {
+async function gatewayRequest<T>(csrfToken: string, path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`/api/gateway/admin/v1/${path}`, {
     ...init,
     cache: "no-store",
     headers: {
-      Authorization: `Bearer ${token}`,
       ...(init.body ? { "Content-Type": "application/json" } : {}),
+      ...(init.method && init.method !== "GET" ? { "X-CSRF-Token": csrfToken } : {}),
       ...init.headers,
     },
   });
   const payload = await response.json() as T & ApiErrorPayload;
   if (!response.ok) {
+    if (response.status === 401) window.location.assign("/");
     throw new Error(payload.error?.message ?? `请求失败：HTTP ${response.status}`);
   }
   return payload;
@@ -83,9 +84,12 @@ function StatusPill({ value }: { value: string }) {
 }
 
 export function AdminConsole() {
-  const [token, setToken] = useState("");
+  const [csrfToken, setCsrfToken] = useState("");
   const [tokenInput, setTokenInput] = useState("");
   const [showToken, setShowToken] = useState(false);
+  const [booting, setBooting] = useState(true);
+  const [oidcEnabled, setOidcEnabled] = useState(false);
+  const [devLoginEnabled, setDevLoginEnabled] = useState(false);
   const [identity, setIdentity] = useState<AdminIdentity | null>(null);
   const [keys, setKeys] = useState<VirtualKey[]>([]);
   const [approvals, setApprovals] = useState<RotationRequest[]>([]);
@@ -112,12 +116,12 @@ export function AdminConsole() {
     window.setTimeout(() => setNotice(null), 3500);
   };
 
-  const loadData = async (credential = token) => {
+  const loadData = async (csrf = csrfToken) => {
     const [me, keyList, requestList, eventList] = await Promise.all([
-      gatewayRequest<AdminIdentity>(credential, "me"),
-      gatewayRequest<ListResponse<VirtualKey>>(credential, "virtual-keys?limit=200"),
-      gatewayRequest<ListResponse<RotationRequest>>(credential, "rotation-requests?limit=200"),
-      gatewayRequest<ListResponse<AuditEvent>>(credential, "audit-events?limit=100"),
+      gatewayRequest<AdminIdentity>(csrf, "me"),
+      gatewayRequest<ListResponse<VirtualKey>>(csrf, "virtual-keys?limit=200"),
+      gatewayRequest<ListResponse<RotationRequest>>(csrf, "rotation-requests?limit=200"),
+      gatewayRequest<ListResponse<AuditEvent>>(csrf, "audit-events?limit=100"),
     ]);
     setIdentity(me);
     setKeys(keyList.data);
@@ -125,17 +129,41 @@ export function AdminConsole() {
     setAudit(eventList.data);
   };
 
+  useEffect(() => {
+    void Promise.all([
+      fetch("/api/auth/config", { cache: "no-store" }).then((response) => response.json()),
+      fetch("/api/auth/session", { cache: "no-store" }),
+    ]).then(async ([config, sessionResponse]) => {
+      setOidcEnabled(Boolean(config.oidcEnabled));
+      setDevLoginEnabled(Boolean(config.devTokenLoginEnabled));
+      if (sessionResponse.ok) {
+        const session = await sessionResponse.json() as { csrfToken: string };
+        setCsrfToken(session.csrfToken);
+        await loadData(session.csrfToken);
+      }
+    }).catch(() => undefined).finally(() => setBooting(false));
+    // Session bootstrap runs once; subsequent refreshes use the CSRF state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const login = async (event: FormEvent) => {
     event.preventDefault();
     const credential = tokenInput.trim();
-    if (!credential) return;
+    if (!credential || !devLoginEnabled) return;
     setLoading(true);
     setTokenInput("");
     try {
-      await loadData(credential);
-      setToken(credential);
+      const response = await fetch("/api/auth/dev-token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: credential }),
+      });
+      const payload = await response.json() as { csrfToken?: string; error?: { message?: string } };
+      if (!response.ok || !payload.csrfToken) throw new Error(payload.error?.message ?? "Token 验证失败");
+      setCsrfToken(payload.csrfToken);
+      await loadData(payload.csrfToken);
     } catch (error) {
-      setToken("");
+      setCsrfToken("");
       setIdentity(null);
       alert(error instanceof Error ? error.message : "Token 验证失败", true);
     } finally {
@@ -155,19 +183,23 @@ export function AdminConsole() {
     }
   };
 
-  const logout = () => {
-    setToken("");
-    setIdentity(null);
-    setKeys([]);
-    setApprovals([]);
-    setAudit([]);
-    setView("overview");
-    alert("Token 已从页面内存清除");
+  const logout = async () => {
+    try {
+      await fetch("/api/auth/logout", { method: "POST", headers: { "X-CSRF-Token": csrfToken } });
+    } finally {
+      setCsrfToken("");
+      setIdentity(null);
+      setKeys([]);
+      setApprovals([]);
+      setAudit([]);
+      setView("overview");
+      alert("服务端会话已退出");
+    }
   };
 
   const toggleKey = async (item: VirtualKey) => {
     try {
-      await gatewayRequest(token, `virtual-keys/${encodeURIComponent(item.keyId)}`, {
+      await gatewayRequest(csrfToken, `virtual-keys/${encodeURIComponent(item.keyId)}`, {
         method: "PATCH",
         headers: { "If-Match": String(item.version) },
         body: JSON.stringify({ enabled: !item.enabled }),
@@ -180,7 +212,7 @@ export function AdminConsole() {
 
   const requestRotation = async (item: VirtualKey) => {
     try {
-      await gatewayRequest(token, `virtual-keys/${encodeURIComponent(item.keyId)}/rotation-requests`, {
+      await gatewayRequest(csrfToken, `virtual-keys/${encodeURIComponent(item.keyId)}/rotation-requests`, {
         method: "POST", headers: { "If-Match": String(item.version) },
       });
       await refresh("轮换申请已创建，等待另一位管理员批准");
@@ -192,7 +224,7 @@ export function AdminConsole() {
 
   const approveRotation = async (item: RotationRequest) => {
     try {
-      const result = await gatewayRequest<{ key: string }>(token, `rotation-requests/${encodeURIComponent(item.requestId)}/approve`, { method: "POST" });
+      const result = await gatewayRequest<{ key: string }>(csrfToken, `rotation-requests/${encodeURIComponent(item.requestId)}/approve`, { method: "POST" });
       await refresh();
       setOneTimeSecret(result.key);
     } catch (error) {
@@ -206,7 +238,7 @@ export function AdminConsole() {
     const allowedModels = keyForm.models.split(",").map((item) => item.trim()).filter(Boolean);
     try {
       if (keyForm.mode === "create") {
-        const result = await gatewayRequest<{ key: string }>(token, "virtual-keys", {
+        const result = await gatewayRequest<{ key: string }>(csrfToken, "virtual-keys", {
           method: "POST",
           body: JSON.stringify({
             keyId: keyForm.keyId.trim(), tenantId: keyForm.tenantId.trim(),
@@ -217,7 +249,7 @@ export function AdminConsole() {
         await refresh();
         setOneTimeSecret(result.key);
       } else {
-        await gatewayRequest(token, `virtual-keys/${encodeURIComponent(keyForm.keyId)}`, {
+        await gatewayRequest(csrfToken, `virtual-keys/${encodeURIComponent(keyForm.keyId)}`, {
           method: "PATCH", headers: { "If-Match": String(keyForm.version) },
           body: JSON.stringify({ allowedModels }),
         });
@@ -234,6 +266,10 @@ export function AdminConsole() {
     applicationId: item.applicationId, models: item.allowedModels.join(", "), version: item.version,
   });
 
+  if (booting) {
+    return <main className="login-shell"><section className="login-card"><BrandMark /><p className="eyebrow">ENTERPRISE CONTROL PLANE</p><h1>正在恢复安全会话…</h1><p className="login-copy">控制台正在向服务端确认登录状态，浏览器不会读取 Access Token。</p></section></main>;
+  }
+
   if (!identity) {
     return (
       <main className="login-shell">
@@ -241,19 +277,22 @@ export function AdminConsole() {
           <BrandMark />
           <p className="eyebrow">ENTERPRISE CONTROL PLANE</p>
           <h1>把模型访问变成<br /><em>可治理的能力</em></h1>
-          <p className="login-copy">使用管理员 Access Token 进入控制台。Token 只保存在当前 React 页面内存，刷新或退出后立即消失。</p>
-          <form className="login-form" onSubmit={login}>
+          <p className="login-copy">通过企业身份提供方登录。Access Token 只保存在 Next.js 服务端，浏览器仅持有 HttpOnly 会话 Cookie。</p>
+          {oidcEnabled && <a className="primary-button wide sso-button" href="/api/auth/login"><span>使用企业 SSO 登录</span><b>→</b></a>}
+          {devLoginEnabled && <form className="login-form dev-login" onSubmit={login}>
+            <p>仅本地开发：使用管理员 Token 创建服务端会话</p>
             <label htmlFor="access-token">管理员 Access Token</label>
             <div className="token-field">
               <input id="access-token" type={showToken ? "text" : "password"} value={tokenInput} onChange={(event) => setTokenInput(event.target.value)} autoComplete="off" spellCheck={false} placeholder="粘贴 OIDC 或本地开发 Token" required />
               <button type="button" className="icon-button" onClick={() => setShowToken((value) => !value)}>{showToken ? "隐藏" : "显示"}</button>
             </div>
             <button className="primary-button wide" disabled={loading} type="submit"><span>{loading ? "正在验证…" : "验证身份并进入"}</span><b>→</b></button>
-          </form>
-          <div className="security-note"><span>●</span> 同源 BFF · 默认拒绝 · 不写浏览器存储</div>
+          </form>}
+          {!oidcEnabled && !devLoginEnabled && <div className="auth-warning">尚未配置 OIDC。请让平台工程师设置管理后台身份提供方。</div>}
+          <div className="security-note"><span>●</span> HttpOnly 会话 · 同源 BFF · CSRF 校验 · 默认拒绝</div>
         </section>
         <aside className="login-aside">
-          <div className="aside-top"><span>AI GATEWAY</span><span>v0.11</span></div>
+          <div className="aside-top"><span>AI GATEWAY</span><span>v0.12</span></div>
           <div className="signal-card"><p>PLATFORM SIGNAL</p><strong>身份 × 范围 × 审批</strong><div className="signal-line"><i /><i /><i /><i /><i /></div></div>
           <p className="aside-quote">“网关不是另一个代理层，<br />而是企业 AI 的策略执行点。”</p>
         </aside>
@@ -274,7 +313,7 @@ export function AdminConsole() {
             </button>
           ))}
         </nav>
-        <div className="sidebar-foot"><div className="status-row"><i /><span>Gateway connected</span></div><button className="text-button" onClick={logout}>退出并清除 Token</button></div>
+        <div className="sidebar-foot"><div className="status-row"><i /><span>Gateway connected</span></div><button className="text-button" onClick={() => void logout()}>退出安全会话</button></div>
       </aside>
 
       <main className="workspace">
